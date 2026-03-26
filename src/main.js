@@ -64,8 +64,8 @@ app.innerHTML = `
         <section class="panel legend">
           <p><strong>사용 방법</strong></p>
           <ul>
-            <li>좌석을 클릭: 제외(X) 좌석 전환(학생은 비움)</li>
-            <li>Shift + 좌석 클릭: 학생 고정/해제</li>
+            <li>자리 없애기: 빈 좌석 클릭(해당 자리에는 학생 배치 x)</li>
+            <li>특정 학생 공개 고정: 사전배치 후 Shift+좌석클릭(초록색으로 변함)</li>
             <li>사전 좌석 배치: 학생 선택 후 좌석 클릭</li>
             <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
           </ul>
@@ -202,8 +202,9 @@ function refreshSavedGroups() {
 function applyViewPerspective() {
   if (!seatBoardEl || !viewPerspectiveToggleBtn) return
   const isStudent = state.viewPerspective === 'student'
-  seatBoardEl.classList.toggle('perspective-teacher', !isStudent)
-  seatBoardEl.classList.toggle('perspective-student', isStudent)
+  // 교사/학생 상태에 붙이는 레이아웃을 반대로 매핑 (화면이 이전과 반대로 보이게)
+  seatBoardEl.classList.toggle('perspective-teacher', isStudent)
+  seatBoardEl.classList.toggle('perspective-student', !isStudent)
   viewPerspectiveToggleBtn.textContent = isStudent ? '교사뷰' : '학생뷰'
   viewPerspectiveToggleBtn.setAttribute(
     'aria-label',
@@ -243,7 +244,7 @@ function applyPreAssignmentsFromSavedObject(entries, studentsList) {
     state.preAssignments.set(seatId, name)
     state.fixedAssignments.delete(seatId)
     const seat = seatById.get(seatId)
-    if (seat) seat.student = ''
+    if (seat) seat.student = name
     applied += 1
   }
   state.presetApplied = false
@@ -386,13 +387,17 @@ function renderSeats() {
     el.className = 'seat'
     el.dataset.seatId = seat.id
 
+    const displayName = (seat.student || '').trim()
+
     if (state.blockedSeats.has(seat.id)) {
       el.classList.add('blocked')
-    } else if (state.preAssignments.has(seat.id)) {
-      el.classList.add('preassigned')
-    } else if (seat.student && state.fixedAssignments.has(seat.id)) {
+    } else if (
+      displayName &&
+      state.fixedAssignments.has(seat.id) &&
+      !state.preAssignments.has(seat.id)
+    ) {
       el.classList.add('fixed')
-    } else if (seat.student) {
+    } else if (displayName) {
       el.classList.add('filled')
     } else {
       el.classList.add('empty')
@@ -401,8 +406,7 @@ function renderSeats() {
     if (state.blockedSeats.has(seat.id)) {
       el.innerHTML = `<span class="pos">${seat.index}</span><span class="blocked-icon" aria-hidden="true">X</span>`
     } else {
-      const name = seat.student ? seat.student : ''
-      el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${name}</span>`
+      el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${displayName}</span>`
     }
     seatGrid.appendChild(el)
   }
@@ -620,7 +624,8 @@ function autoAssign(applyPreset = false) {
   state.students = parseStudents(studentInput.value)
   const separatedPairs = parseSeparatedPairs(separateInput.value)
 
-  for (const seatId of state.preAssignments.keys()) {
+  const preSeatIds = Array.from(state.preAssignments.keys())
+  for (const seatId of preSeatIds) {
     state.fixedAssignments.delete(seatId)
   }
 
@@ -629,10 +634,12 @@ function autoAssign(applyPreset = false) {
     if (presetError) {
       updateStatus(presetError)
       renderSeats()
+      renderPreassignedList()
       return
     }
     state.presetApplied = true
   } else {
+    // Ctrl 없이 start: 사전 배치는 반영하지 않되, Shift 고정은 유지
     state.presetApplied = false
   }
 
@@ -668,6 +675,7 @@ function autoAssign(applyPreset = false) {
   if (!success && separatedPairs.length > 0) {
     updateStatus('분리 조건을 만족하는 배치를 찾지 못했습니다. 조건을 완화해 주세요.')
     renderSeats()
+    renderPreassignedList()
     return
   }
 
@@ -676,9 +684,12 @@ function autoAssign(applyPreset = false) {
   } else if (applyPreset) {
     updateStatus('자동 배치가 완료되었습니다. (사전 배치 반영)')
   } else {
-    updateStatus('자동 배치가 완료되었습니다. (사전 배치 미반영)')
+    updateStatus(
+      '전체 무작위 배치가 완료되었습니다. (사전 배치 목록은 그대로 두었습니다. 반영은 Ctrl+start)'
+    )
   }
   renderSeats()
+  renderPreassignedList()
 }
 
 function resetSeatDisplay() {
@@ -706,7 +717,7 @@ seatGrid.addEventListener('click', (event) => {
   if (!seat) return
 
   const selectedPresetStudent = presetStudentSelect.value
-  if (selectedPresetStudent) {
+  if (selectedPresetStudent && !event.shiftKey) {
     if (state.blockedSeats.has(seatId)) {
       updateStatus('제외 좌석에는 사전 배치를 할 수 없습니다.')
       return
@@ -724,6 +735,7 @@ seatGrid.addEventListener('click', (event) => {
     if (state.preAssignments.get(seatId) === selectedPresetStudent) {
       state.preAssignments.delete(seatId)
       seat.student = ''
+      state.fixedAssignments.delete(seatId)
       state.presetApplied = false
       renderSeats()
       renderPreassignedList()
@@ -732,10 +744,8 @@ seatGrid.addEventListener('click', (event) => {
     }
 
     state.preAssignments.set(seatId, selectedPresetStudent)
-    // 사전 배치 단계에서는 화면에서 이름/색이 드러나면 안 되므로
-    // 해당 좌석의 고정/배치 표시를 즉시 제거합니다.
     state.fixedAssignments.delete(seatId)
-    seat.student = ''
+    seat.student = selectedPresetStudent
     state.presetApplied = false
     renderSeats()
     renderPreassignedList()
@@ -757,6 +767,9 @@ seatGrid.addEventListener('click', (event) => {
     if (state.fixedAssignments.has(seatId)) {
       state.fixedAssignments.delete(seatId)
     } else {
+      // 사전 배치 좌석을 Shift로 고정하면 "공개 고정"으로 전환
+      // (사전 배치 목록에서는 제거되고, 일반 고정(초록)으로 표시)
+      state.preAssignments.delete(seatId)
       state.fixedAssignments.set(seatId, seat.student)
     }
   } else {

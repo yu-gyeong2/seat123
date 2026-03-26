@@ -650,11 +650,6 @@ button.primary {
   border-color: rgba(110, 200, 185, 0.55);
 }
 
-.seat.preassigned {
-  background: linear-gradient(160deg, #e0e7ff 0%, #ede9fe 100%);
-  border-color: rgba(165, 180, 252, 0.75);
-}
-
 .seat.blocked {
   background: linear-gradient(160deg, #ffe4ec 0%, #fce7f3 100%);
   border-color: rgba(244, 180, 200, 0.85);
