@@ -56,6 +56,36 @@ app.innerHTML = `
           🥚 옵션
         </button>
       </div>
+
+      <div id="advanced-controls" class="advanced-controls">
+        <section class="panel legend">
+          <p><strong>사용 방법</strong></p>
+          <ul>
+            <li>좌석을 클릭: 제외(X) 좌석 전환(학생은 비움)</li>
+            <li>Shift + 좌석 클릭: 학생 고정/해제</li>
+            <li>학생 선택 후 좌석 클릭: 사전 배치 지정/해제(완료 팝업 표시)</li>
+            <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
+          </ul>
+          <p id="status">좌석판을 먼저 만들어 주세요.</p>
+        </section>
+        <div class="field-group wide">
+          <label for="separate-input">분리할 학생 쌍 (한 줄에 1쌍, 예: 김민수-이서연)</label>
+          <textarea id="separate-input" rows="4" placeholder="김민수-이서연&#10;박준호-최유진"></textarea>
+        </div>
+        <div class="field-group wide">
+          <label for="preset-student-select">사전 배치 학생 선택 후 좌석 클릭</label>
+          <div class="preset-row">
+            <select id="preset-student-select">
+              <option value="">선택 안 함 (일반 모드)</option>
+            </select>
+            <button id="clear-preassignments" type="button">사전 배치 전체 해제</button>
+          </div>
+        </div>
+        <div class="field-group wide">
+          <p class="secret-title">사전 배치 현황</p>
+          <div id="preassigned-list" class="preassigned-list"></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel">
@@ -75,36 +105,6 @@ app.innerHTML = `
 
     <div id="countdown-overlay" class="countdown-overlay" aria-hidden="true">
       <div id="countdown-number" class="countdown-number">5</div>
-    </div>
-
-    <div id="advanced-controls" class="advanced-controls">
-      <section class="panel legend">
-        <p><strong>사용 방법</strong></p>
-        <ul>
-          <li>좌석을 클릭: 제외(X) 좌석 전환(학생은 비움)</li>
-          <li>Shift + 좌석 클릭: 학생 고정/해제</li>
-          <li>학생 선택 후 좌석 클릭: 사전 배치 지정/해제(완료 팝업 표시)</li>
-          <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
-        </ul>
-        <p id="status">좌석판을 먼저 만들어 주세요.</p>
-      </section>
-      <div class="field-group wide">
-        <label for="separate-input">분리할 학생 쌍 (한 줄에 1쌍, 예: 김민수-이서연)</label>
-        <textarea id="separate-input" rows="4" placeholder="김민수-이서연&#10;박준호-최유진"></textarea>
-      </div>
-      <div class="field-group wide">
-        <label for="preset-student-select">사전 배치 학생 선택 후 좌석 클릭</label>
-        <div class="preset-row">
-          <select id="preset-student-select">
-            <option value="">선택 안 함 (일반 모드)</option>
-          </select>
-          <button id="clear-preassignments" type="button">사전 배치 전체 해제</button>
-        </div>
-      </div>
-      <div class="field-group wide">
-        <p class="secret-title">사전 배치 현황</p>
-        <div id="preassigned-list" class="preassigned-list"></div>
-      </div>
     </div>
   </main>
 `
@@ -674,8 +674,14 @@ rowsInput.addEventListener('keydown', (e) => {
 colsInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') buildSeatMap()
 })
-secretToggleBtn.addEventListener('click', () => {
+secretToggleBtn?.addEventListener('click', () => {
+  if (!advancedControlsEl) return
   advancedControlsEl.classList.toggle('show')
+  if (advancedControlsEl.classList.contains('show')) {
+    requestAnimationFrame(() => {
+      advancedControlsEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }
 })
 clearPreassignmentsBtn.addEventListener('click', () => {
   const seatIdsToClear = Array.from(state.preAssignments.keys())

@@ -192,9 +192,23 @@ textarea {
 }
 
 .row-actions button {
-  flex: 1 1 200px;
   background: rgba(255, 255, 255, 0.9);
   border-color: rgba(200, 190, 230, 0.5);
+}
+
+/* 명단 저장 / 명단 불러오기 동일 크기 (저장 버튼 기준 너비) */
+.row-actions #save-students,
+.row-actions-load #load-students {
+  flex: 0 0 220px;
+  width: 220px;
+  max-width: 100%;
+  min-height: 47px;
+  padding: 11px 14px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .row-actions input {
@@ -216,10 +230,6 @@ textarea {
   min-width: 140px;
 }
 
-.row-actions-load button {
-  flex: 0 0 auto;
-  white-space: nowrap;
-}
 
 .secret-toggle {
   display: flex;
@@ -248,6 +258,8 @@ textarea {
 
 .advanced-controls.show {
   display: block;
+  margin-top: 4px;
+  width: 100%;
 }
 
 .secret-title {
