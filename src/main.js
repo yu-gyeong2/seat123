@@ -1,0 +1,702 @@
+import './style.css'
+
+const state = {
+  seats: [],
+  students: [],
+  fixedAssignments: new Map(),
+  preAssignments: new Map(),
+  // Ctrl+자동배치로 사전배치를 "반영"한 이후엔 사전배치 좌석의 학생 이름을 보여줍니다.
+  presetApplied: false,
+  blockedSeats: new Set(),
+}
+
+const app = document.querySelector('#app')
+app.innerHTML = `
+  <main class="container">
+    <header class="header">
+      <h1>❤️ 학급 자리배치 프로그램</h1>
+      <p>학생 명단을 입력하고 좌석을 자동으로 배치하세요.</p>
+      <p class="header-credit">Made by 유경T</p>
+    </header>
+
+    <section class="panel controls">
+      <div class="seat-setup-row">
+        <div class="field-group">
+          <label for="rows">행(줄) 수</label>
+          <input id="rows" type="number" min="1" max="10" value="5" />
+        </div>
+        <div class="field-group">
+          <label for="cols">열(칸) 수</label>
+          <input id="cols" type="number" min="1" max="10" value="6" />
+        </div>
+        <div class="field-group seat-setup-btn-wrap">
+          <button id="build-seat-map" type="button" class="seat-setup-btn">
+            책상 배열
+          </button>
+        </div>
+      </div>
+      <div class="field-group wide">
+        <label for="student-input">학생 이름 (줄바꿈 또는 쉼표로 구분)</label>
+        <textarea id="student-input" rows="6" placeholder="강대현, 김건호, 김도연"></textarea>
+      </div>
+      <div class="field-group wide">
+        <div class="row-actions">
+          <input id="group-name" type="text" placeholder="그룹 이름 (예: 3반-1)" />
+          <button id="save-students" type="button">명단 저장</button>
+          <div class="row-actions-load">
+            <select id="saved-groups">
+              <option value="">저장된 그룹 선택</option>
+            </select>
+            <button id="load-students" type="button">명단 불러오기</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-group wide secret-toggle">
+        <button id="secret-toggle" type="button" class="secret-btn" aria-label="옵션 보기">
+          🥚 옵션
+        </button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="teacher">교탁</div>
+      <div id="seat-grid" class="seat-grid"></div>
+      <div class="seat-actions">
+        <label class="effect-toggle-label" for="effect-toggle">
+          <input id="effect-toggle" type="checkbox" />
+          효과 켜기
+        </label>
+        <div class="seat-actions-row">
+          <button id="auto-assign" class="primary seat-primary" type="button">자리 배치 start</button>
+          <button id="seat-reset-display" type="button" class="seat-reset-btn">초기화</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="countdown-overlay" class="countdown-overlay" aria-hidden="true">
+      <div id="countdown-number" class="countdown-number">5</div>
+    </div>
+
+    <div id="advanced-controls" class="advanced-controls">
+      <section class="panel legend">
+        <p><strong>사용 방법</strong></p>
+        <ul>
+          <li>좌석을 클릭: 제외(X) 좌석 전환(학생은 비움)</li>
+          <li>Shift + 좌석 클릭: 학생 고정/해제</li>
+          <li>학생 선택 후 좌석 클릭: 사전 배치 지정/해제(완료 팝업 표시)</li>
+          <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
+        </ul>
+        <p id="status">좌석판을 먼저 만들어 주세요.</p>
+      </section>
+      <div class="field-group wide">
+        <label for="separate-input">분리할 학생 쌍 (한 줄에 1쌍, 예: 김민수-이서연)</label>
+        <textarea id="separate-input" rows="4" placeholder="김민수-이서연&#10;박준호-최유진"></textarea>
+      </div>
+      <div class="field-group wide">
+        <label for="preset-student-select">사전 배치 학생 선택 후 좌석 클릭</label>
+        <div class="preset-row">
+          <select id="preset-student-select">
+            <option value="">선택 안 함 (일반 모드)</option>
+          </select>
+          <button id="clear-preassignments" type="button">사전 배치 전체 해제</button>
+        </div>
+      </div>
+      <div class="field-group wide">
+        <p class="secret-title">사전 배치 현황</p>
+        <div id="preassigned-list" class="preassigned-list"></div>
+      </div>
+    </div>
+  </main>
+`
+
+const rowsInput = document.querySelector('#rows')
+const colsInput = document.querySelector('#cols')
+const studentInput = document.querySelector('#student-input')
+const groupNameInput = document.querySelector('#group-name')
+const presetStudentSelect = document.querySelector('#preset-student-select')
+const clearPreassignmentsBtn = document.querySelector('#clear-preassignments')
+const saveStudentsBtn = document.querySelector('#save-students')
+const loadStudentsBtn = document.querySelector('#load-students')
+const savedGroupsSelect = document.querySelector('#saved-groups')
+const seatGrid = document.querySelector('#seat-grid')
+const statusText = document.querySelector('#status')
+const buildSeatMapBtn = document.querySelector('#build-seat-map')
+const autoAssignBtn = document.querySelector('#auto-assign')
+const seatResetDisplayBtn = document.querySelector('#seat-reset-display')
+const effectToggleInput = document.querySelector('#effect-toggle')
+const countdownOverlay = document.querySelector('#countdown-overlay')
+const countdownNumberEl = document.querySelector('#countdown-number')
+const shuffleBtn = document.querySelector('#shuffle')
+const advancedControlsEl = document.querySelector('#advanced-controls')
+const secretToggleBtn = document.querySelector('#secret-toggle')
+
+const separateInput = document.querySelector('#separate-input')
+const preassignedListEl = document.querySelector('#preassigned-list')
+
+function parseStudents(rawText) {
+  return rawText
+    .split(/[\n,]+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+}
+
+function setStudentsTextarea(students) {
+  studentInput.value = students.join(', ')
+  refreshPresetStudentSelect()
+}
+
+const STORAGE_PREFIX_V2 = 'seat123_students_v2:'
+const STORAGE_LAST_GROUP_V2 = 'seat123_students_last_group_v2'
+const STORAGE_KEY_V1 = 'seat123_students_v1'
+
+function getGroupFromUI() {
+  const groupFromSelect = savedGroupsSelect?.value
+  const groupFromInput = groupNameInput?.value
+  const group = (groupFromSelect || groupFromInput || '').trim()
+  return group
+}
+
+function refreshSavedGroups() {
+  if (!savedGroupsSelect) return
+  const currentValue = savedGroupsSelect.value
+  const groups = []
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith(STORAGE_PREFIX_V2)) {
+      groups.push(key.slice(STORAGE_PREFIX_V2.length))
+    }
+  }
+
+  groups.sort((a, b) => a.localeCompare(b, 'ko'))
+  savedGroupsSelect.innerHTML = '<option value="">저장된 그룹 선택</option>'
+  for (const g of groups) {
+    const opt = document.createElement('option')
+    opt.value = g
+    opt.textContent = g
+    savedGroupsSelect.appendChild(opt)
+  }
+
+  // 마지막에 저장한 그룹이 있으면 자동 선택
+  const last = localStorage.getItem(STORAGE_LAST_GROUP_V2)
+  if (last && groups.includes(last)) {
+    savedGroupsSelect.value = last
+  } else if (groups.includes(currentValue)) {
+    savedGroupsSelect.value = currentValue
+  }
+}
+
+function saveStudentsToLocal() {
+  const students = parseStudents(studentInput.value)
+  if (students.length === 0) {
+    updateStatus('저장할 명단이 비어 있습니다.')
+    return
+  }
+
+  const groupName = (groupNameInput?.value || '').trim()
+  if (!groupName) {
+    updateStatus('그룹 이름을 입력해 주세요.')
+    return
+  }
+
+  const payload = { students, savedAt: Date.now(), group: groupName }
+  try {
+    localStorage.setItem(`${STORAGE_PREFIX_V2}${groupName}`, JSON.stringify(payload))
+    localStorage.setItem(STORAGE_LAST_GROUP_V2, groupName)
+    refreshSavedGroups()
+    updateStatus(`명단이 저장되었습니다. (그룹: ${groupName})`)
+  } catch {
+    updateStatus('명단 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.')
+  }
+}
+
+function loadStudentsFromLocal() {
+  const groupName = getGroupFromUI()
+  if (!groupName) {
+    // v1(기존 단일 키)이 있으면 마지막 수단으로 불러오기
+    const rawV1 = localStorage.getItem(STORAGE_KEY_V1)
+    if (rawV1) {
+      try {
+        const parsedV1 = JSON.parse(rawV1)
+        const students = Array.isArray(parsedV1?.students)
+          ? parsedV1.students.map((x) => String(x).trim()).filter(Boolean)
+          : []
+        if (students.length === 0) {
+          updateStatus('저장된 명단이 비어 있습니다.')
+          return
+        }
+        setStudentsTextarea(students)
+        state.students = students
+        updateStatus('저장된 명단을 불러왔습니다. (기존 저장 방식)')
+        return
+      } catch {
+        // 아래 메시지로 처리
+      }
+    }
+    updateStatus('불러올 그룹을 선택해 주세요.')
+    return
+  }
+
+  const rawV2 = localStorage.getItem(`${STORAGE_PREFIX_V2}${groupName}`)
+  if (!rawV2) {
+    updateStatus(`그룹을 찾을 수 없습니다. (그룹: ${groupName})`)
+    return
+  }
+
+  let parsed
+  try {
+    parsed = JSON.parse(rawV2)
+  } catch {
+    updateStatus('저장된 명단 형식이 올바르지 않습니다.')
+    return
+  }
+
+  const students = Array.isArray(parsed?.students)
+    ? parsed.students.map((x) => String(x).trim()).filter(Boolean)
+    : []
+
+  if (students.length === 0) {
+    updateStatus('저장된 명단이 비어 있습니다.')
+    return
+  }
+
+  setStudentsTextarea(students)
+  state.students = students
+  renderSeats()
+  updateStatus(`그룹의 명단을 불러왔습니다. (그룹: ${groupName})`)
+}
+
+function makeSeats(rows, cols) {
+  const list = []
+  for (let r = 1; r <= rows; r += 1) {
+    for (let c = 1; c <= cols; c += 1) {
+      // 행 기준(위→아래), 각 행 내에서 왼쪽→오른쪽 방향으로 1부터 증가
+      // (열 우선) 왼쪽 열부터 위→아래로 번호가 증가하고, 다음 열로 넘어갑니다.
+      const index = (r - 1) * cols + c
+      list.push({ id: `${r}-${c}`, row: r, col: c, index, student: '' })
+    }
+  }
+  return list
+}
+
+function parseSeparatedPairs(rawText) {
+  return rawText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(/[-,]/).map((name) => name.trim()).filter(Boolean))
+    .filter((pair) => pair.length === 2 && pair[0] !== pair[1])
+}
+
+function shuffleArray(items) {
+  const arr = [...items]
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
+function renderSeats() {
+  seatGrid.innerHTML = ''
+  const cols = Number(colsInput.value)
+  seatGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(90px, 1fr))`
+
+  for (const seat of state.seats) {
+    const el = document.createElement('button')
+    el.type = 'button'
+    el.className = 'seat'
+    el.dataset.seatId = seat.id
+
+    if (state.blockedSeats.has(seat.id)) {
+      el.classList.add('blocked')
+    } else if (state.preAssignments.has(seat.id)) {
+      el.classList.add('preassigned')
+    } else if (seat.student && state.fixedAssignments.has(seat.id)) {
+      el.classList.add('fixed')
+    } else if (seat.student) {
+      el.classList.add('filled')
+    } else {
+      el.classList.add('empty')
+    }
+
+    if (state.blockedSeats.has(seat.id)) {
+      el.innerHTML = `<span class="pos">${seat.index}</span><span class="blocked-icon" aria-hidden="true">X</span>`
+    } else {
+      const name = seat.student ? seat.student : ''
+      el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${name}</span>`
+    }
+    seatGrid.appendChild(el)
+  }
+}
+
+function renderPreassignedList() {
+  if (!preassignedListEl) return
+
+  const entries = Array.from(state.preAssignments.entries())
+  entries.sort((a, b) => {
+    const seatA = state.seats.find((s) => s.id === a[0])
+    const seatB = state.seats.find((s) => s.id === b[0])
+    const idxA = seatA?.index ?? 0
+    const idxB = seatB?.index ?? 0
+    return idxA - idxB
+  })
+
+  if (entries.length === 0) {
+    preassignedListEl.innerHTML = '<p class="muted">사전 배치가 없습니다.</p>'
+    return
+  }
+
+  preassignedListEl.innerHTML = entries
+    .map(([seatId, student]) => {
+      const seat = state.seats.find((s) => s.id === seatId)
+      const seatIndex = seat?.index ?? seatId
+      const seatPos = seat ? `(${seat.row}, ${seat.col})` : ''
+      const planned = student
+      return `<div class="preassigned-row"><div class="main">좌석 ${seatIndex} ${seatPos}</div><div class="sub">설정: ${planned}</div></div>`
+    })
+    .join('')
+}
+
+function updateStatus(message = '') {
+  const assigned = state.seats.filter((seat) => seat.student).length
+  const blocked = state.blockedSeats.size
+  const total = state.seats.length
+  const base = `총 ${total}석 / 배치 ${assigned}명 / 제외 ${blocked}석`
+  statusText.textContent = message ? `${base} - ${message}` : base
+}
+
+function buildSeatMap() {
+  const rows = Number(rowsInput.value)
+  const cols = Number(colsInput.value)
+
+  if (!rows || !cols) {
+    updateStatus('행과 열을 올바르게 입력해 주세요.')
+    return
+  }
+
+  state.seats = makeSeats(rows, cols)
+  state.students = parseStudents(studentInput.value)
+  state.fixedAssignments.clear()
+  state.preAssignments.clear()
+  state.presetApplied = false
+  state.blockedSeats.clear()
+
+  refreshPresetStudentSelect()
+  renderSeats()
+  renderPreassignedList()
+  updateStatus('좌석판이 생성되었습니다.')
+}
+
+function refreshPresetStudentSelect() {
+  const selectedValue = presetStudentSelect.value
+  const names = parseStudents(studentInput.value)
+  presetStudentSelect.innerHTML = '<option value="">선택 안 함 (일반 모드)</option>'
+  for (const name of names) {
+    const opt = document.createElement('option')
+    opt.value = name
+    opt.textContent = name
+    presetStudentSelect.appendChild(opt)
+  }
+  if (names.includes(selectedValue)) {
+    presetStudentSelect.value = selectedValue
+  } else {
+    presetStudentSelect.value = ''
+  }
+}
+
+function isNeighbor(seatA, seatB) {
+  if (!seatA || !seatB) return false
+  return Math.abs(seatA.row - seatB.row) <= 1 && Math.abs(seatA.col - seatB.col) <= 1
+}
+
+function satisfiesSeparationPairs(separatedPairs) {
+  const studentToSeat = new Map()
+  for (const seat of state.seats) {
+    if (seat.student) {
+      studentToSeat.set(seat.student, seat)
+    }
+  }
+
+  for (const [first, second] of separatedPairs) {
+    const aSeat = studentToSeat.get(first)
+    const bSeat = studentToSeat.get(second)
+    if (isNeighbor(aSeat, bSeat)) {
+      return false
+    }
+  }
+  return true
+}
+
+function applyPresetAssignments(students) {
+  const studentSet = new Set(students)
+  const usedSeat = new Set()
+  const usedStudent = new Set()
+
+  for (const [seatId, student] of state.preAssignments.entries()) {
+    const seat = state.seats.find((item) => item.id === seatId)
+    if (!seat) {
+      return `사전 배치 좌표 오류: ${seatId}`
+    }
+    if (state.blockedSeats.has(seatId)) {
+      return `사전 배치 좌석이 제외되어 있습니다: ${student} -> ${seatId}`
+    }
+    if (!studentSet.has(student)) {
+      return `명단에 없는 학생이 사전 배치에 있습니다: ${student}`
+    }
+    if (usedSeat.has(seatId) || usedStudent.has(student)) {
+      return `사전 배치 중복이 있습니다: ${student}`
+    }
+    usedSeat.add(seatId)
+    usedStudent.add(student)
+    state.fixedAssignments.set(seatId, student)
+  }
+
+  return ''
+}
+
+function autoAssign(applyPreset = false) {
+  if (!state.seats.length) {
+    updateStatus('먼저 좌석판을 만들어 주세요.')
+    return
+  }
+  state.students = parseStudents(studentInput.value)
+  const separatedPairs = parseSeparatedPairs(separateInput.value)
+
+  for (const seatId of state.preAssignments.keys()) {
+    state.fixedAssignments.delete(seatId)
+  }
+
+  if (applyPreset) {
+    const presetError = applyPresetAssignments(state.students)
+    if (presetError) {
+      updateStatus(presetError)
+      renderSeats()
+      return
+    }
+    state.presetApplied = true
+  } else {
+    state.presetApplied = false
+  }
+
+  for (const seat of state.seats) {
+    if (!state.fixedAssignments.has(seat.id)) {
+      seat.student = ''
+    } else {
+      seat.student = state.fixedAssignments.get(seat.id) || ''
+    }
+  }
+
+  const availableSeats = state.seats.filter(
+    (seat) => !state.blockedSeats.has(seat.id) && !state.fixedAssignments.has(seat.id)
+  )
+
+  const fixedStudents = new Set(state.fixedAssignments.values())
+  const remainingStudents = state.students.filter((name) => !fixedStudents.has(name))
+  const assignableCount = Math.min(availableSeats.length, remainingStudents.length)
+  let success = false
+  const maxAttempts = 600
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const randomized = shuffleArray(remainingStudents)
+    availableSeats.forEach((seat, idx) => {
+      seat.student = idx < assignableCount ? randomized[idx] : ''
+    })
+    if (satisfiesSeparationPairs(separatedPairs)) {
+      success = true
+      break
+    }
+  }
+
+  if (!success && separatedPairs.length > 0) {
+    updateStatus('분리 조건을 만족하는 배치를 찾지 못했습니다. 조건을 완화해 주세요.')
+    renderSeats()
+    return
+  }
+
+  if (remainingStudents.length > availableSeats.length) {
+    updateStatus('좌석이 부족하여 일부 학생은 배치되지 않았습니다.')
+  } else if (applyPreset) {
+    updateStatus('자동 배치가 완료되었습니다. (사전 배치 반영)')
+  } else {
+    updateStatus('자동 배치가 완료되었습니다. (사전 배치 미반영)')
+  }
+  renderSeats()
+}
+
+function resetSeatDisplay() {
+  studentInput.value = ''
+  state.students = []
+  state.fixedAssignments.clear()
+  state.preAssignments.clear()
+  state.presetApplied = false
+  state.blockedSeats.clear()
+  for (const seat of state.seats) {
+    seat.student = ''
+  }
+  refreshPresetStudentSelect()
+  renderSeats()
+  renderPreassignedList()
+  updateStatus('명단과 배치를 지웠습니다. 좌석 번호만 표시됩니다.')
+}
+
+seatGrid.addEventListener('click', (event) => {
+  const target = event.target.closest('.seat')
+  if (!target) return
+
+  const seatId = target.dataset.seatId
+  const seat = state.seats.find((item) => item.id === seatId)
+  if (!seat) return
+
+  const selectedPresetStudent = presetStudentSelect.value
+  if (selectedPresetStudent) {
+    if (state.blockedSeats.has(seatId)) {
+      updateStatus('제외 좌석에는 사전 배치를 할 수 없습니다.')
+      return
+    }
+
+    for (const [existingSeatId, existingStudent] of state.preAssignments.entries()) {
+      if (existingStudent === selectedPresetStudent && existingSeatId !== seatId) {
+        state.preAssignments.delete(existingSeatId)
+        state.fixedAssignments.delete(existingSeatId)
+        const oldSeat = state.seats.find((item) => item.id === existingSeatId)
+        if (oldSeat) oldSeat.student = ''
+      }
+    }
+
+    if (state.preAssignments.get(seatId) === selectedPresetStudent) {
+      state.preAssignments.delete(seatId)
+      seat.student = ''
+      state.presetApplied = false
+      renderSeats()
+      renderPreassignedList()
+      updateStatus(`${selectedPresetStudent} 사전 배치를 해제했습니다.`)
+      return
+    }
+
+    state.preAssignments.set(seatId, selectedPresetStudent)
+    // 사전 배치 단계에서는 화면에서 이름/색이 드러나면 안 되므로
+    // 해당 좌석의 고정/배치 표시를 즉시 제거합니다.
+    state.fixedAssignments.delete(seatId)
+    seat.student = ''
+    state.presetApplied = false
+    renderSeats()
+    renderPreassignedList()
+    window.alert(`${selectedPresetStudent} 학생의 사전 배치가 완료되었습니다.`)
+    updateStatus(`${selectedPresetStudent} 학생을 (${seat.row}, ${seat.col})에 사전 배치했습니다.`)
+    return
+  }
+
+  if (event.shiftKey) {
+    // Shift+클릭은 "학생 고정/해제"로 동작
+    if (!seat.student) {
+      updateStatus('고정/해제는 학생이 배치된 좌석에서만 가능합니다.')
+      return
+    }
+    if (state.blockedSeats.has(seatId)) {
+      // 고정 시에는 제외 해제하는 편이 자연스러움
+      state.blockedSeats.delete(seatId)
+    }
+    if (state.fixedAssignments.has(seatId)) {
+      state.fixedAssignments.delete(seatId)
+    } else {
+      state.fixedAssignments.set(seatId, seat.student)
+    }
+  } else {
+    // 일반 클릭은 "제외(X) 토글"로 동작 (학생이 있어도 비워둠)
+    if (state.blockedSeats.has(seatId)) {
+      state.blockedSeats.delete(seatId)
+    } else {
+      state.blockedSeats.add(seatId)
+    }
+    state.fixedAssignments.delete(seatId)
+    state.preAssignments.delete(seatId)
+    seat.student = ''
+  }
+
+  renderSeats()
+  renderPreassignedList()
+  updateStatus()
+})
+
+function runCountdownThen(callback) {
+  if (!countdownOverlay || !countdownNumberEl) {
+    callback()
+    return
+  }
+  let n = 5
+  const finish = () => {
+    countdownOverlay.classList.remove('show')
+    countdownOverlay.setAttribute('aria-hidden', 'true')
+    autoAssignBtn.disabled = false
+    try {
+      callback()
+    } catch {
+      /* 배치 중 오류가 나도 버튼은 복구 */
+    }
+  }
+  const tick = () => {
+    countdownNumberEl.textContent = String(n)
+    if (n === 1) {
+      setTimeout(finish, 1000)
+      return
+    }
+    n -= 1
+    setTimeout(tick, 1000)
+  }
+  autoAssignBtn.disabled = true
+  countdownOverlay.classList.add('show')
+  countdownOverlay.setAttribute('aria-hidden', 'false')
+  tick()
+}
+
+buildSeatMapBtn.addEventListener('click', buildSeatMap)
+autoAssignBtn.addEventListener('click', (event) => {
+  const applyPreset = Boolean(event.ctrlKey)
+  const run = () => autoAssign(applyPreset)
+  if (effectToggleInput?.checked) {
+    runCountdownThen(run)
+  } else {
+    run()
+  }
+})
+if (shuffleBtn) {
+  shuffleBtn.addEventListener('click', () => {
+    autoAssign(false)
+  })
+}
+seatResetDisplayBtn?.addEventListener('click', resetSeatDisplay)
+studentInput.addEventListener('input', refreshPresetStudentSelect)
+saveStudentsBtn.addEventListener('click', saveStudentsToLocal)
+loadStudentsBtn.addEventListener('click', loadStudentsFromLocal)
+rowsInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') buildSeatMap()
+})
+colsInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') buildSeatMap()
+})
+secretToggleBtn.addEventListener('click', () => {
+  advancedControlsEl.classList.toggle('show')
+})
+clearPreassignmentsBtn.addEventListener('click', () => {
+  const seatIdsToClear = Array.from(state.preAssignments.keys())
+  for (const seatId of seatIdsToClear) {
+    state.fixedAssignments.delete(seatId)
+    const seat = state.seats.find((item) => item.id === seatId)
+    if (seat) {
+      seat.student = ''
+    }
+  }
+  state.preAssignments.clear()
+  state.presetApplied = false
+  for (const seat of state.seats) {
+    if (!state.fixedAssignments.has(seat.id)) {
+      seat.student = ''
+    }
+  }
+  renderSeats()
+  renderPreassignedList()
+  updateStatus('사전 배치가 전체 해제되었습니다.')
+})
+
+refreshSavedGroups()
+buildSeatMap()
