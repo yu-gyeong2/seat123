@@ -72,7 +72,7 @@ app.innerHTML = `
           <p id="status">좌석판을 먼저 만들어 주세요.</p>
         </section>
         <div class="field-group wide">
-          <label for="separate-input">▶️ 분리할 학생 쌍 (한 줄에 1쌍, 예: 김민수-이서연)</label>
+          <label for="separate-input">▶️ 분리할 학생 쌍 (한 줄에 1쌍)</label>
           <textarea id="separate-input" rows="4" placeholder="김건호-김도연&#10;김건호-강대현"></textarea>
         </div>
         <div class="field-group wide">
