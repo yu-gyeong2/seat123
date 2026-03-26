@@ -81,7 +81,7 @@ app.innerHTML = `
             <select id="preset-student-select">
               <option value="">선택 안 함 (일반 모드)</option>
             </select>
-            <button id="clear-preassignments" type="button">사전 배치 전체 해제</button>
+            <button id="clear-preassignments" type="button">사전 배치 완료</button>
           </div>
         </div>
         <div class="field-group wide">
@@ -853,24 +853,19 @@ secretToggleBtn.addEventListener('click', () => {
   advancedControlsEl.classList.toggle('show')
 })
 clearPreassignmentsBtn.addEventListener('click', () => {
-  const seatIdsToClear = Array.from(state.preAssignments.keys())
-  for (const seatId of seatIdsToClear) {
+  // 사전 배치 목록은 유지하고, 자리표에서는 이름만 숨김
+  for (const [seatId] of state.preAssignments.entries()) {
     state.fixedAssignments.delete(seatId)
     const seat = state.seats.find((item) => item.id === seatId)
-    if (seat) {
-      seat.student = ''
-    }
+    if (seat) seat.student = ''
   }
-  state.preAssignments.clear()
   state.presetApplied = false
-  for (const seat of state.seats) {
-    if (!state.fixedAssignments.has(seat.id)) {
-      seat.student = ''
-    }
+  if (presetStudentSelect) {
+    presetStudentSelect.value = ''
   }
   renderSeats()
   renderPreassignedList()
-  updateStatus('사전 배치가 전체 해제되었습니다.')
+  updateStatus('사전 배치가 완료되었습니다. 자리표에서는 이름이 숨겨집니다.')
 })
 
 refreshSavedGroups()
