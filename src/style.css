@@ -84,6 +84,10 @@ body {
   font-weight: 500;
 }
 
+.header h1 + p {
+  padding-left: 1.45em;
+}
+
 .header-credit {
   margin: 10px 0 0;
   text-align: right;
@@ -149,7 +153,8 @@ label {
 
 input,
 textarea,
-button {
+button,
+select {
   font: inherit;
 }
 
@@ -216,6 +221,12 @@ textarea {
   min-width: 160px;
 }
 
+.row-actions #group-name,
+.row-actions-load #saved-groups {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
 .row-actions-load {
   display: flex;
   flex-wrap: nowrap;
@@ -262,10 +273,19 @@ textarea {
   width: 100%;
 }
 
+/* 사용 방법 아래 · 분리 입력 아래 라벨 위에 살짝 여백 */
+.advanced-controls > .field-group.wide:nth-child(2),
+.advanced-controls > .field-group.wide:nth-child(3) {
+  margin-top: 14px;
+}
+
+/* .field-group label 과 동일한 제목 스타일 */
 .secret-title {
-  margin: 0 0 8px;
-  font-weight: 700;
-  color: #7c6fae;
+  margin: 10px 0 0;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .preassigned-list {
@@ -351,11 +371,44 @@ button.primary {
 }
 
 .seat-actions {
+  /* 왼쪽(효과+초기화) 두 줄 합친 높이 ≈ 오른쪽 한 줄(큰 버튼) 높이 */
+  --seat-actions-left-gap: 6px;
   margin-top: 16px;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 14px;
+}
+
+.seat-actions-left {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--seat-actions-left-gap);
+  flex: 0 0 auto;
+  min-width: 0;
+  width: max-content;
+}
+
+.seat-actions-left .seat-reset-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(220, 218, 232, 0.85);
+  color: var(--text-strong);
+  box-shadow: 0 2px 10px rgba(120, 110, 150, 0.08);
+}
+
+.seat-actions-left .seat-reset-btn:hover {
+  filter: brightness(0.98);
+  box-shadow: 0 3px 12px rgba(120, 110, 150, 0.12);
 }
 
 .seat-actions-row {
@@ -367,57 +420,100 @@ button.primary {
 }
 
 .effect-toggle-label {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   font-weight: 600;
+  font-size: 0.9375rem;
+  line-height: 1.2;
   white-space: nowrap;
   flex: 0 0 auto;
   cursor: pointer;
   user-select: none;
   color: var(--text-strong);
-  padding: 8px 12px;
+  padding: 4px 12px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(220, 210, 240, 0.6);
 }
 
 .seat-actions-row button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   font-size: 1.12rem;
   font-weight: 700;
+  line-height: 1.25;
   padding: 15px 18px;
   border-radius: var(--radius);
 }
 
+/* 엑셀 저장 · 교탁 공통 민트 톤 */
+.export-excel-btn,
+.teacher {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid rgba(110, 190, 170, 0.55);
+  color: #0f5132;
+  box-shadow: 0 4px 14px rgba(110, 180, 150, 0.18);
+}
+
+.export-excel-btn:hover {
+  filter: brightness(1.02);
+}
+
 .seat-actions-row .seat-primary {
   flex: 1 1 200px;
-}
-
-.seat-actions-row .seat-reset-btn {
-  flex: 0 0 auto;
-  min-width: 108px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #fce7f3 0%, #e9d5ff 100%);
-  border: 1px solid rgba(220, 190, 230, 0.65);
-  color: var(--text-strong);
-  box-shadow: 0 4px 16px rgba(200, 160, 210, 0.18);
-}
-
-.seat-actions-row .seat-reset-btn:hover {
-  filter: brightness(1.03);
-}
-
-.seat-actions-row button.primary.seat-primary {
+  min-width: 0;
   background: linear-gradient(135deg, #8b9cf5 0%, #a78bfa 50%, #c4a8f5 100%);
   border-color: transparent;
+  color: #ffffff;
   box-shadow: 0 6px 24px rgba(139, 120, 230, 0.28);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.seat-actions-row button.primary.seat-primary:hover:not(:disabled) {
+  filter: brightness(1.03);
+  box-shadow: 0 8px 28px rgba(139, 120, 230, 0.32);
+}
+
+.seat-actions-row .perspective-toggle-btn {
+  flex: 0 0 auto;
+  min-width: 118px;
+  font-weight: 600;
+  background: #ffffff;
+  border: 1px solid rgba(220, 218, 232, 0.85);
+  color: var(--text-strong);
+  box-shadow: 0 2px 12px rgba(120, 110, 150, 0.1);
+}
+
+.seat-actions-row .perspective-toggle-btn:hover {
+  filter: brightness(0.98);
+  box-shadow: 0 4px 14px rgba(120, 110, 150, 0.14);
 }
 
 .seat-actions-row button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
   transform: none;
+}
+
+.seat-export {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(220, 210, 240, 0.55);
+  display: flex;
+  justify-content: center;
+}
+
+.export-excel-btn {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 12px 22px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
 .countdown-overlay {
@@ -466,17 +562,36 @@ button.primary {
   color: #6b9e9a;
 }
 
+.seat-board {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+}
+
+.seat-board.perspective-student {
+  flex-direction: column-reverse;
+}
+
+.seat-board.perspective-student .seat-grid {
+  transform: scaleY(-1);
+}
+
+.seat-board.perspective-student .seat {
+  transform: scaleY(-1);
+}
+
+.seat-board.perspective-student .seat:hover:not(:disabled) {
+  transform: scaleY(-1) translateY(-1px);
+}
+
 .teacher {
   width: 200px;
-  margin: 0 auto 18px;
+  margin: 0 auto;
   text-align: center;
   padding: 12px 14px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, #e9d5ff 0%, #d3e8ff 100%);
   font-weight: 700;
-  color: var(--text-strong);
-  border: 1px solid rgba(200, 190, 230, 0.45);
-  box-shadow: 0 4px 16px rgba(180, 160, 220, 0.15);
 }
 
 .seat-grid {
