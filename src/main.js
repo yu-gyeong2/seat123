@@ -202,9 +202,8 @@ function refreshSavedGroups() {
 function applyViewPerspective() {
   if (!seatBoardEl || !viewPerspectiveToggleBtn) return
   const isStudent = state.viewPerspective === 'student'
-  // 교사/학생 상태에 붙이는 레이아웃을 반대로 매핑 (화면이 이전과 반대로 보이게)
-  seatBoardEl.classList.toggle('perspective-teacher', isStudent)
-  seatBoardEl.classList.toggle('perspective-student', !isStudent)
+  seatBoardEl.classList.toggle('perspective-teacher', !isStudent)
+  seatBoardEl.classList.toggle('perspective-student', isStudent)
   viewPerspectiveToggleBtn.textContent = isStudent ? '교사뷰' : '학생뷰'
   viewPerspectiveToggleBtn.setAttribute(
     'aria-label',
@@ -693,8 +692,8 @@ function autoAssign(applyPreset = false) {
 }
 
 function resetSeatDisplay() {
-  studentInput.value = ''
-  state.students = []
+  // 명단은 유지하고 좌석 상태만 초기화
+  state.students = parseStudents(studentInput.value)
   state.fixedAssignments.clear()
   state.preAssignments.clear()
   state.presetApplied = false
@@ -705,7 +704,7 @@ function resetSeatDisplay() {
   refreshPresetStudentSelect()
   renderSeats()
   renderPreassignedList()
-  updateStatus('명단과 배치를 지웠습니다. 좌석 번호만 표시됩니다.')
+  updateStatus('배치/제외/고정을 초기화했습니다. 명단은 유지됩니다.')
 }
 
 seatGrid.addEventListener('click', (event) => {
