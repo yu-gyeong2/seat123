@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx'
 import './style.css'
 
 const state = {
@@ -8,6 +9,8 @@ const state = {
   // Ctrl+자동배치로 사전배치를 "반영"한 이후엔 사전배치 좌석의 학생 이름을 보여줍니다.
   presetApplied: false,
   blockedSeats: new Set(),
+  /** 'teacher' = 교탁이 위(교실 앞), 'student' = 학생이 교실 뒤에서 보는 배치 */
+  viewPerspective: 'teacher',
 }
 
 const app = document.querySelector('#app')
@@ -56,55 +59,63 @@ app.innerHTML = `
           🥚 옵션
         </button>
       </div>
+
+      <div id="advanced-controls" class="advanced-controls">
+        <section class="panel legend">
+          <p><strong>사용 방법</strong></p>
+          <ul>
+            <li>좌석을 클릭: 제외(X) 좌석 전환(학생은 비움)</li>
+            <li>Shift + 좌석 클릭: 학생 고정/해제</li>
+            <li>학생 선택 후 좌석 클릭: 사전 배치 지정/해제(완료 팝업 표시)</li>
+            <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
+          </ul>
+          <p id="status">좌석판을 먼저 만들어 주세요.</p>
+        </section>
+        <div class="field-group wide">
+          <label for="separate-input">▶️ 분리할 학생 쌍 (한 줄에 1쌍, 예: 김민수-이서연)</label>
+          <textarea id="separate-input" rows="4" placeholder="김건호-김도연&#10;김건호-강대현"></textarea>
+        </div>
+        <div class="field-group wide">
+          <label for="preset-student-select">▶️ 사전 배치 학생 선택 후 좌석 클릭</label>
+          <div class="preset-row">
+            <select id="preset-student-select">
+              <option value="">선택 안 함 (일반 모드)</option>
+            </select>
+            <button id="clear-preassignments" type="button">사전 배치 전체 해제</button>
+          </div>
+        </div>
+        <div class="field-group wide">
+          <p class="secret-title">▶️ 사전 배치 현황</p>
+          <div id="preassigned-list" class="preassigned-list"></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel">
-      <div class="teacher">교탁</div>
-      <div id="seat-grid" class="seat-grid"></div>
+      <div id="seat-board" class="seat-board perspective-teacher">
+        <div class="teacher">교탁</div>
+        <div id="seat-grid" class="seat-grid"></div>
+      </div>
       <div class="seat-actions">
-        <label class="effect-toggle-label" for="effect-toggle">
-          <input id="effect-toggle" type="checkbox" />
-          효과 켜기
-        </label>
-        <div class="seat-actions-row">
-          <button id="auto-assign" class="primary seat-primary" type="button">자리 배치 start</button>
+        <div class="seat-actions-left">
+          <label class="effect-toggle-label" for="effect-toggle">
+            <input id="effect-toggle" type="checkbox" />
+            효과 켜기
+          </label>
           <button id="seat-reset-display" type="button" class="seat-reset-btn">초기화</button>
         </div>
+        <div class="seat-actions-row">
+          <button id="auto-assign" class="primary seat-primary" type="button">자리 배치 start</button>
+          <button id="view-perspective-toggle" type="button" class="perspective-toggle-btn">학생뷰</button>
+        </div>
+      </div>
+      <div class="seat-export">
+        <button id="export-seat-excel" type="button" class="export-excel-btn">좌석 배치도 엑셀 저장</button>
       </div>
     </section>
 
     <div id="countdown-overlay" class="countdown-overlay" aria-hidden="true">
       <div id="countdown-number" class="countdown-number">5</div>
-    </div>
-
-    <div id="advanced-controls" class="advanced-controls">
-      <section class="panel legend">
-        <p><strong>사용 방법</strong></p>
-        <ul>
-          <li>좌석을 클릭: 제외(X) 좌석 전환(학생은 비움)</li>
-          <li>Shift + 좌석 클릭: 학생 고정/해제</li>
-          <li>학생 선택 후 좌석 클릭: 사전 배치 지정/해제(완료 팝업 표시)</li>
-          <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
-        </ul>
-        <p id="status">좌석판을 먼저 만들어 주세요.</p>
-      </section>
-      <div class="field-group wide">
-        <label for="separate-input">분리할 학생 쌍 (한 줄에 1쌍, 예: 김민수-이서연)</label>
-        <textarea id="separate-input" rows="4" placeholder="김민수-이서연&#10;박준호-최유진"></textarea>
-      </div>
-      <div class="field-group wide">
-        <label for="preset-student-select">사전 배치 학생 선택 후 좌석 클릭</label>
-        <div class="preset-row">
-          <select id="preset-student-select">
-            <option value="">선택 안 함 (일반 모드)</option>
-          </select>
-          <button id="clear-preassignments" type="button">사전 배치 전체 해제</button>
-        </div>
-      </div>
-      <div class="field-group wide">
-        <p class="secret-title">사전 배치 현황</p>
-        <div id="preassigned-list" class="preassigned-list"></div>
-      </div>
     </div>
   </main>
 `
@@ -118,7 +129,10 @@ const clearPreassignmentsBtn = document.querySelector('#clear-preassignments')
 const saveStudentsBtn = document.querySelector('#save-students')
 const loadStudentsBtn = document.querySelector('#load-students')
 const savedGroupsSelect = document.querySelector('#saved-groups')
+const seatBoardEl = document.querySelector('#seat-board')
 const seatGrid = document.querySelector('#seat-grid')
+const viewPerspectiveToggleBtn = document.querySelector('#view-perspective-toggle')
+const exportSeatExcelBtn = document.querySelector('#export-seat-excel')
 const statusText = document.querySelector('#status')
 const buildSeatMapBtn = document.querySelector('#build-seat-map')
 const autoAssignBtn = document.querySelector('#auto-assign')
@@ -185,6 +199,57 @@ function refreshSavedGroups() {
   }
 }
 
+function applyViewPerspective() {
+  if (!seatBoardEl || !viewPerspectiveToggleBtn) return
+  const isStudent = state.viewPerspective === 'student'
+  seatBoardEl.classList.toggle('perspective-teacher', !isStudent)
+  seatBoardEl.classList.toggle('perspective-student', isStudent)
+  viewPerspectiveToggleBtn.textContent = isStudent ? '교사뷰' : '학생뷰'
+  viewPerspectiveToggleBtn.setAttribute(
+    'aria-label',
+    isStudent ? '교사 뷰로 자리표 보기' : '학생 뷰로 자리표 보기'
+  )
+}
+
+/** 저장된 객체에서 사전 배치 복원. 학생은 명단에 있고 좌석 id가 현재 판에 있어야 반영. */
+function applyPreAssignmentsFromSavedObject(entries, studentsList) {
+  state.preAssignments.clear()
+  const studentSet = new Set(studentsList)
+  const seatById = new Map(state.seats.map((s) => [s.id, s]))
+
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) {
+    state.presetApplied = false
+    return { applied: 0, dropped: 0 }
+  }
+
+  const pairs = Object.entries(entries)
+    .map(([seatId, st]) => [seatId, String(st).trim()])
+    .filter(([, name]) => name)
+
+  const usedStudents = new Set()
+  let applied = 0
+  let dropped = 0
+
+  for (const [seatId, name] of pairs) {
+    if (!seatById.has(seatId) || !studentSet.has(name)) {
+      dropped += 1
+      continue
+    }
+    if (usedStudents.has(name)) {
+      dropped += 1
+      continue
+    }
+    usedStudents.add(name)
+    state.preAssignments.set(seatId, name)
+    state.fixedAssignments.delete(seatId)
+    const seat = seatById.get(seatId)
+    if (seat) seat.student = ''
+    applied += 1
+  }
+  state.presetApplied = false
+  return { applied, dropped }
+}
+
 function saveStudentsToLocal() {
   const students = parseStudents(studentInput.value)
   if (students.length === 0) {
@@ -198,12 +263,18 @@ function saveStudentsToLocal() {
     return
   }
 
-  const payload = { students, savedAt: Date.now(), group: groupName }
+  const preAssignmentsObj = Object.fromEntries(state.preAssignments)
+  const payload = { students, savedAt: Date.now(), group: groupName, preAssignments: preAssignmentsObj }
   try {
     localStorage.setItem(`${STORAGE_PREFIX_V2}${groupName}`, JSON.stringify(payload))
     localStorage.setItem(STORAGE_LAST_GROUP_V2, groupName)
     refreshSavedGroups()
-    updateStatus(`명단이 저장되었습니다. (그룹: ${groupName})`)
+    const preN = state.preAssignments.size
+    updateStatus(
+      preN > 0
+        ? `명단·사전 배치(${preN}건)가 저장되었습니다. (그룹: ${groupName})`
+        : `명단이 저장되었습니다. (그룹: ${groupName})`
+    )
   } catch {
     updateStatus('명단 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.')
   }
@@ -226,6 +297,8 @@ function loadStudentsFromLocal() {
         }
         setStudentsTextarea(students)
         state.students = students
+        applyPreAssignmentsFromSavedObject(null, students)
+        refreshPresetStudentSelect()
         updateStatus('저장된 명단을 불러왔습니다. (기존 저장 방식)')
         return
       } catch {
@@ -261,8 +334,14 @@ function loadStudentsFromLocal() {
 
   setStudentsTextarea(students)
   state.students = students
+  const preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
+  refreshPresetStudentSelect()
   renderSeats()
-  updateStatus(`그룹의 명단을 불러왔습니다. (그룹: ${groupName})`)
+  renderPreassignedList()
+  let msg = `그룹의 명단을 불러왔습니다. (그룹: ${groupName})`
+  if (preResult.applied > 0) msg += ` 사전 배치 ${preResult.applied}건 복원.`
+  if (preResult.dropped > 0) msg += ` (생략 ${preResult.dropped}건)`
+  updateStatus(msg)
 }
 
 function makeSeats(rows, cols) {
@@ -327,6 +406,7 @@ function renderSeats() {
     }
     seatGrid.appendChild(el)
   }
+  applyViewPerspective()
 }
 
 function renderPreassignedList() {
@@ -365,6 +445,56 @@ function updateStatus(message = '') {
   statusText.textContent = message ? `${base} - ${message}` : base
 }
 
+function seatCellExportText(seat) {
+  if (state.blockedSeats.has(seat.id)) return ''
+  if (seat.student) return seat.student
+  const pre = state.preAssignments.get(seat.id)
+  if (pre) return pre
+  return ''
+}
+
+function exportSeatChartToExcel() {
+  if (!state.seats.length) {
+    updateStatus('먼저 좌석판을 만들어 주세요.')
+    return
+  }
+  const rows = Number(rowsInput.value)
+  const cols = Number(colsInput.value)
+  if (!rows || !cols) {
+    updateStatus('행·열 정보를 확인할 수 없습니다.')
+    return
+  }
+
+  const byId = new Map(state.seats.map((s) => [s.id, s]))
+  const aoa = []
+  const headerRow = Array(cols).fill('')
+  headerRow[0] = '교탁'
+  aoa.push(headerRow)
+
+  for (let r = 1; r <= rows; r += 1) {
+    const row = []
+    for (let c = 1; c <= cols; c += 1) {
+      const seat = byId.get(`${r}-${c}`)
+      row.push(seat ? seatCellExportText(seat) : '')
+    }
+    aoa.push(row)
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } }]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '좌석배치')
+
+  const group = (groupNameInput?.value || savedGroupsSelect?.value || '').trim()
+  const d = new Date()
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  const safeGroup = group.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)
+  const base = safeGroup ? `좌석배치_${safeGroup}_${dateStr}` : `좌석배치_${dateStr}`
+  XLSX.writeFile(wb, `${base}.xlsx`)
+  updateStatus('엑셀 파일을 저장했습니다.')
+}
+
 function buildSeatMap() {
   const rows = Number(rowsInput.value)
   const cols = Number(colsInput.value)
@@ -385,6 +515,34 @@ function buildSeatMap() {
   renderSeats()
   renderPreassignedList()
   updateStatus('좌석판이 생성되었습니다.')
+}
+
+function tryRestoreLastSavedGroup() {
+  const groupName = (localStorage.getItem(STORAGE_LAST_GROUP_V2) || '').trim()
+  if (!groupName) return
+  const raw = localStorage.getItem(`${STORAGE_PREFIX_V2}${groupName}`)
+  if (!raw) return
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return
+  }
+  const students = Array.isArray(parsed?.students)
+    ? parsed.students.map((x) => String(x).trim()).filter(Boolean)
+    : []
+  if (students.length === 0) return
+
+  setStudentsTextarea(students)
+  state.students = students
+  applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
+  if (groupNameInput) groupNameInput.value = groupName
+  refreshSavedGroups()
+  if (savedGroupsSelect) savedGroupsSelect.value = groupName
+  refreshPresetStudentSelect()
+  renderSeats()
+  renderPreassignedList()
+  updateStatus(`마지막 저장 그룹을 불러왔습니다. (그룹: ${groupName})`)
 }
 
 function refreshPresetStudentSelect() {
@@ -665,6 +823,11 @@ if (shuffleBtn) {
   })
 }
 seatResetDisplayBtn?.addEventListener('click', resetSeatDisplay)
+viewPerspectiveToggleBtn?.addEventListener('click', () => {
+  state.viewPerspective = state.viewPerspective === 'teacher' ? 'student' : 'teacher'
+  applyViewPerspective()
+})
+exportSeatExcelBtn?.addEventListener('click', exportSeatChartToExcel)
 studentInput.addEventListener('input', refreshPresetStudentSelect)
 saveStudentsBtn.addEventListener('click', saveStudentsToLocal)
 loadStudentsBtn.addEventListener('click', loadStudentsFromLocal)
@@ -700,3 +863,4 @@ clearPreassignmentsBtn.addEventListener('click', () => {
 
 refreshSavedGroups()
 buildSeatMap()
+tryRestoreLastSavedGroup()
