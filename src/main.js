@@ -354,6 +354,16 @@ function applyViewPerspective() {
   )
 }
 
+/** 명단 불러오기 시 이전 자리표·사전 배치·고정 표시를 지움(저장본 사전 배치 적용 전에 호출) */
+function clearSeatAssignmentsForNewRoster() {
+  for (const seat of state.seats) {
+    seat.student = ''
+  }
+  state.fixedAssignments.clear()
+  state.preAssignments.clear()
+  state.presetApplied = false
+}
+
 /** 저장된 객체에서 사전 배치 복원. 학생은 명단에 있고 좌석 id가 현재 판에 있어야 반영. */
 function applyPreAssignmentsFromSavedObject(entries, studentsList) {
   state.preAssignments.clear()
@@ -446,8 +456,11 @@ function loadStudentsFromLocal() {
         }
         setStudentsTextarea(students)
         state.students = students
+        clearSeatAssignmentsForNewRoster()
         applyPreAssignmentsFromSavedObject(null, students)
         refreshPresetStudentSelect()
+        renderSeats()
+        renderPreassignedList()
         updateStatus('저장된 명단을 불러왔습니다. (기존 저장 방식)')
         return
       } catch {
@@ -483,6 +496,7 @@ function loadStudentsFromLocal() {
 
   setStudentsTextarea(students)
   state.students = students
+  clearSeatAssignmentsForNewRoster()
   applySeatLayoutFromSaved(parsed)
   const preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   refreshPresetStudentSelect()
