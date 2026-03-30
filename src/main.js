@@ -23,13 +23,21 @@ app.innerHTML = `
     </header>
 
     <section class="panel controls">
+      <div class="field-group wide seat-layout-field">
+        <label for="seat-layout">자리 형태</label>
+        <select id="seat-layout">
+          <option value="individual">개별</option>
+          <option value="pair">짝꿍 (옆자리 2명씩 붙음)</option>
+          <option value="group">모둠 (모둠 수 × 모둠당 인원)</option>
+        </select>
+      </div>
       <div class="seat-setup-row">
         <div class="field-group">
-          <label for="rows">행(줄) 수</label>
+          <label id="label-rows" for="rows">행(줄) 수</label>
           <input id="rows" type="number" min="1" max="10" value="5" />
         </div>
         <div class="field-group">
-          <label for="cols">열(칸) 수</label>
+          <label id="label-cols" for="cols">열(칸) 수</label>
           <input id="cols" type="number" min="1" max="10" value="6" />
         </div>
         <div class="field-group seat-setup-btn-wrap">
@@ -64,7 +72,7 @@ app.innerHTML = `
         <section class="panel legend">
           <p><strong>사용 방법</strong></p>
           <ul>
-            <li>자리 만들기: 행·열 숫자 입력</li>
+            <li>자리 만들기: 행·열 입력(개별·짝꿍) 또는 모둠 수·모둠당 인원(모둠)</li>
             <li>자리 없애기: 빈 좌석 클릭(해당 자리에는 학생 배치 x)</li>
             <li>사전 좌석 배치: 학생 선택 후 좌석 클릭 (⭐사전 배치후 명단 저장)</li>
             <li>사전 배치 반영은 <strong class="ctrl-key-hint">Ctrl</strong> 키를 누른 채 자리 배치 클릭</li>
@@ -137,6 +145,9 @@ const viewPerspectiveToggleBtn = document.querySelector('#view-perspective-toggl
 const exportSeatExcelBtn = document.querySelector('#export-seat-excel')
 const statusText = document.querySelector('#status')
 const buildSeatMapBtn = document.querySelector('#build-seat-map')
+const seatLayoutSelect = document.querySelector('#seat-layout')
+const labelRows = document.querySelector('#label-rows')
+const labelCols = document.querySelector('#label-cols')
 const autoAssignBtn = document.querySelector('#auto-assign')
 const seatResetDisplayBtn = document.querySelector('#seat-reset-display')
 const effectToggleInput = document.querySelector('#effect-toggle')
@@ -266,7 +277,13 @@ function saveStudentsToLocal() {
   }
 
   const preAssignmentsObj = Object.fromEntries(state.preAssignments)
-  const payload = { students, savedAt: Date.now(), group: groupName, preAssignments: preAssignmentsObj }
+  const payload = {
+    students,
+    savedAt: Date.now(),
+    group: groupName,
+    preAssignments: preAssignmentsObj,
+    seatLayout: getSeatLayout(),
+  }
   try {
     localStorage.setItem(`${STORAGE_PREFIX_V2}${groupName}`, JSON.stringify(payload))
     localStorage.setItem(STORAGE_LAST_GROUP_V2, groupName)
@@ -336,6 +353,7 @@ function loadStudentsFromLocal() {
 
   setStudentsTextarea(students)
   state.students = students
+  applySeatLayoutFromSaved(parsed)
   const preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   refreshPresetStudentSelect()
   renderSeats()
@@ -377,40 +395,151 @@ function shuffleArray(items) {
   return arr
 }
 
+const SEAT_LAYOUTS = ['individual', 'pair', 'group']
+
+function getSeatLayout() {
+  const v = seatLayoutSelect?.value
+  return SEAT_LAYOUTS.includes(v) ? v : 'individual'
+}
+
+function syncSeatDimensionLabels() {
+  const g = getSeatLayout() === 'group'
+  if (labelRows) labelRows.textContent = g ? '모둠 수' : '행(줄) 수'
+  if (labelCols) labelCols.textContent = g ? '모둠당 인원' : '열(칸) 수'
+  if (rowsInput) {
+    rowsInput.title = g ? '모둠(팀) 개수' : '교실 앞에서 뒤로 가는 줄 수'
+    rowsInput.max = g ? '24' : '10'
+  }
+  if (colsInput) {
+    colsInput.title = g ? '한 모둠에 앉을 인원 수' : '한 줄의 좌석 칸 수'
+    colsInput.max = g ? '30' : '10'
+  }
+  const maxR = rowsInput ? Number(rowsInput.max) : 10
+  const maxC = colsInput ? Number(colsInput.max) : 10
+  if (rowsInput) {
+    const v = Number(rowsInput.value)
+    if (v > maxR) rowsInput.value = String(maxR)
+    if (v < 1 || Number.isNaN(v)) rowsInput.value = '1'
+  }
+  if (colsInput) {
+    const v = Number(colsInput.value)
+    if (v > maxC) colsInput.value = String(maxC)
+    if (v < 1 || Number.isNaN(v)) colsInput.value = '1'
+  }
+}
+
+function applySeatLayoutFromSaved(parsed) {
+  const v = parsed?.seatLayout
+  if (seatLayoutSelect && SEAT_LAYOUTS.includes(v)) {
+    seatLayoutSelect.value = v
+  }
+  syncSeatDimensionLabels()
+}
+
+/** 모둠당 인원 n명을 책상이 모여 보이도록 가로×세로 칸 수로 나눔 (대략 정사각에 가깝게) */
+function clusterGridDims(n) {
+  const count = Math.max(1, Math.floor(Number(n)) || 1)
+  if (count === 1) return { gc: 1, gr: 1 }
+  const gc = Math.min(count, Math.ceil(Math.sqrt(count)))
+  const gr = Math.ceil(count / gc)
+  return { gc, gr }
+}
+
+/** 분단(모둠) 박스들이 교실에 퍼져 있는 것처럼 보이도록 바깥 열 개수 */
+function outerBundanGridCols(teamCount) {
+  const t = Math.max(1, Math.floor(Number(teamCount)) || 1)
+  if (t <= 1) return 1
+  if (t <= 4) return 2
+  if (t <= 9) return 3
+  return 4
+}
+
+function createSeatButton(seat) {
+  const el = document.createElement('button')
+  el.type = 'button'
+  el.className = 'seat'
+  el.dataset.seatId = seat.id
+
+  const displayName = (seat.student || '').trim()
+
+  if (state.blockedSeats.has(seat.id)) {
+    el.classList.add('blocked')
+  } else if (
+    displayName &&
+    state.fixedAssignments.has(seat.id) &&
+    !state.preAssignments.has(seat.id)
+  ) {
+    el.classList.add('fixed')
+  } else if (displayName) {
+    el.classList.add('filled')
+  } else {
+    el.classList.add('empty')
+  }
+
+  if (state.blockedSeats.has(seat.id)) {
+    el.innerHTML = `<span class="pos">${seat.index}</span><span class="blocked-icon" aria-hidden="true">X</span>`
+  } else {
+    el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${displayName}</span>`
+  }
+  return el
+}
+
 function renderSeats() {
   seatGrid.innerHTML = ''
   const cols = Number(colsInput.value)
-  seatGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(90px, 1fr))`
+  const rows = Number(rowsInput.value)
+  const layout = getSeatLayout()
 
-  for (const seat of state.seats) {
-    const el = document.createElement('button')
-    el.type = 'button'
-    el.className = 'seat'
-    el.dataset.seatId = seat.id
+  seatGrid.className = `seat-grid layout-${layout}`
 
-    const displayName = (seat.student || '').trim()
-
-    if (state.blockedSeats.has(seat.id)) {
-      el.classList.add('blocked')
-    } else if (
-      displayName &&
-      state.fixedAssignments.has(seat.id) &&
-      !state.preAssignments.has(seat.id)
-    ) {
-      el.classList.add('fixed')
-    } else if (displayName) {
-      el.classList.add('filled')
-    } else {
-      el.classList.add('empty')
+  if (layout === 'individual') {
+    seatGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(90px, 1fr))`
+    for (const seat of state.seats) {
+      seatGrid.appendChild(createSeatButton(seat))
     }
-
-    if (state.blockedSeats.has(seat.id)) {
-      el.innerHTML = `<span class="pos">${seat.index}</span><span class="blocked-icon" aria-hidden="true">X</span>`
-    } else {
-      el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${displayName}</span>`
+  } else if (layout === 'pair') {
+    seatGrid.style.gridTemplateColumns = ''
+    for (let r = 1; r <= rows; r += 1) {
+      const rowEl = document.createElement('div')
+      rowEl.className = 'seat-row-pair'
+      for (let c = 1; c <= cols; c += 2) {
+        const pairEl = document.createElement('div')
+        pairEl.className = 'seat-pair'
+        const s1 = state.seats.find((s) => s.row === r && s.col === c)
+        const s2 = state.seats.find((s) => s.row === r && s.col === c + 1)
+        if (s1) pairEl.appendChild(createSeatButton(s1))
+        if (s2) pairEl.appendChild(createSeatButton(s2))
+        rowEl.appendChild(pairEl)
+      }
+      seatGrid.appendChild(rowEl)
     }
-    seatGrid.appendChild(el)
+  } else {
+    // 모둠: 행 = 분단 번호, 열 = 분단 내 자리. 분단별 박스 + 안쪽은 책상 덩어리(클러스터) 배치.
+    const outerCols = outerBundanGridCols(rows)
+    seatGrid.style.gridTemplateColumns = `repeat(${outerCols}, minmax(220px, 1fr))`
+    const { gc } = clusterGridDims(cols)
+    for (let r = 1; r <= rows; r += 1) {
+      const groupEl = document.createElement('div')
+      groupEl.className = 'seat-group'
+
+      const title = document.createElement('div')
+      title.className = 'seat-group-title'
+      title.textContent = `${r}모둠`
+
+      const desks = document.createElement('div')
+      desks.className = 'seat-group-desks'
+      desks.style.setProperty('--cluster-cols', String(gc))
+
+      for (let c = 1; c <= cols; c += 1) {
+        const seat = state.seats.find((s) => s.row === r && s.col === c)
+        if (seat) desks.appendChild(createSeatButton(seat))
+      }
+      groupEl.appendChild(title)
+      groupEl.appendChild(desks)
+      seatGrid.appendChild(groupEl)
+    }
   }
+
   applyViewPerspective()
 }
 
@@ -540,6 +669,7 @@ function tryRestoreLastSavedGroup() {
 
   setStudentsTextarea(students)
   state.students = students
+  applySeatLayoutFromSaved(parsed)
   applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   if (groupNameInput) groupNameInput.value = groupName
   refreshSavedGroups()
@@ -854,6 +984,11 @@ colsInput.addEventListener('keydown', (e) => {
 secretToggleBtn.addEventListener('click', () => {
   advancedControlsEl.classList.toggle('show')
 })
+seatLayoutSelect?.addEventListener('change', () => {
+  syncSeatDimensionLabels()
+  if (state.seats.length) renderSeats()
+})
+
 clearPreassignmentsBtn.addEventListener('click', () => {
   // 사전 배치 목록은 유지하고, 자리표에서는 이름만 숨김
   for (const [seatId] of state.preAssignments.entries()) {
@@ -871,5 +1006,6 @@ clearPreassignmentsBtn.addEventListener('click', () => {
 })
 
 refreshSavedGroups()
+syncSeatDimensionLabels()
 buildSeatMap()
 tryRestoreLastSavedGroup()
