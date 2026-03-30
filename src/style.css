@@ -668,12 +668,12 @@ button.primary {
 }
 
 .seat-group-title {
-  font-size: 0.82rem;
+  font-size: 1.12rem;
   font-weight: 800;
   color: var(--text-strong);
   text-align: center;
-  letter-spacing: 0.06em;
-  padding-bottom: 2px;
+  letter-spacing: 0.05em;
+  padding: 2px 4px 6px;
   border-bottom: 1px solid rgba(139, 111, 224, 0.28);
 }
 

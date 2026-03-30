@@ -436,22 +436,20 @@ function applySeatLayoutFromSaved(parsed) {
   syncSeatDimensionLabels()
 }
 
-/** 모둠당 인원 n명을 책상이 모여 보이도록 가로×세로 칸 수로 나눔 (대략 정사각에 가깝게) */
+/** 모둠 안 책상 배치: 가로 2열(인원만큼 세로로 쌓음) */
 function clusterGridDims(n) {
   const count = Math.max(1, Math.floor(Number(n)) || 1)
   if (count === 1) return { gc: 1, gr: 1 }
-  const gc = Math.min(count, Math.ceil(Math.sqrt(count)))
+  const gc = 2
   const gr = Math.ceil(count / gc)
   return { gc, gr }
 }
 
-/** 분단(모둠) 박스들이 교실에 퍼져 있는 것처럼 보이도록 바깥 열 개수 */
+/** 모둠 박스 바깥 배치: 3열(모둠 1개만 있을 때만 1열) */
 function outerBundanGridCols(teamCount) {
   const t = Math.max(1, Math.floor(Number(teamCount)) || 1)
   if (t <= 1) return 1
-  if (t <= 4) return 2
-  if (t <= 9) return 3
-  return 4
+  return 3
 }
 
 function createSeatButton(seat) {
