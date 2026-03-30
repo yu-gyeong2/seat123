@@ -55,11 +55,24 @@ app.innerHTML = `
           <input id="group-name" type="text" placeholder="그룹 이름 (예: 3반-1)" />
           <button id="save-students" type="button">명단 저장</button>
           <div class="row-actions-load">
-            <select id="saved-groups">
-              <option value="">저장된 그룹 선택</option>
-            </select>
+            <div class="saved-groups-widget">
+              <input type="hidden" id="saved-group-key" value="" />
+              <button
+                type="button"
+                id="saved-groups-trigger"
+                class="saved-groups-trigger"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+              >
+                <span id="saved-groups-display">저장된 그룹 선택</span>
+                <span class="saved-groups-chevron" aria-hidden="true">▾</span>
+              </button>
+              <div id="saved-groups-popover" class="saved-groups-popover" hidden>
+                <ul id="saved-groups-list" class="saved-groups-list" role="listbox"></ul>
+                <p id="saved-groups-empty" class="saved-groups-empty muted" hidden>저장된 그룹이 없습니다.</p>
+              </div>
+            </div>
             <button id="load-students" type="button">명단 불러오기</button>
-            <button id="delete-saved-students" type="button" class="delete-list-btn">명단 삭제</button>
           </div>
         </div>
       </div>
@@ -128,6 +141,25 @@ app.innerHTML = `
     <div id="countdown-overlay" class="countdown-overlay" aria-hidden="true">
       <div id="countdown-number" class="countdown-number">5</div>
     </div>
+
+    <div
+      id="delete-group-modal"
+      class="delete-group-modal"
+      hidden
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="delete-group-modal-title"
+    >
+      <div class="delete-group-modal-backdrop" data-modal-dismiss="1" aria-hidden="true"></div>
+      <div class="delete-group-modal-panel">
+        <h2 id="delete-group-modal-title" class="delete-group-modal-title">명단 삭제</h2>
+        <p id="delete-group-modal-text" class="delete-group-modal-text"></p>
+        <div class="delete-group-modal-actions">
+          <button type="button" id="delete-group-cancel" class="delete-group-btn-cancel">취소</button>
+          <button type="button" id="delete-group-confirm" class="delete-group-btn-confirm">확인</button>
+        </div>
+      </div>
+    </div>
   </main>
 `
 
@@ -139,8 +171,19 @@ const presetStudentSelect = document.querySelector('#preset-student-select')
 const clearPreassignmentsBtn = document.querySelector('#clear-preassignments')
 const saveStudentsBtn = document.querySelector('#save-students')
 const loadStudentsBtn = document.querySelector('#load-students')
-const deleteSavedStudentsBtn = document.querySelector('#delete-saved-students')
-const savedGroupsSelect = document.querySelector('#saved-groups')
+const savedGroupKeyInput = document.querySelector('#saved-group-key')
+const savedGroupsWidget = document.querySelector('.saved-groups-widget')
+const savedGroupsTrigger = document.querySelector('#saved-groups-trigger')
+const savedGroupsDisplay = document.querySelector('#saved-groups-display')
+const savedGroupsPopover = document.querySelector('#saved-groups-popover')
+const savedGroupsListEl = document.querySelector('#saved-groups-list')
+const savedGroupsEmptyEl = document.querySelector('#saved-groups-empty')
+const deleteGroupModal = document.querySelector('#delete-group-modal')
+const deleteGroupModalText = document.querySelector('#delete-group-modal-text')
+const deleteGroupConfirmBtn = document.querySelector('#delete-group-confirm')
+const deleteGroupCancelBtn = document.querySelector('#delete-group-cancel')
+
+let pendingDeleteGroupName = ''
 const seatBoardEl = document.querySelector('#seat-board')
 const seatGrid = document.querySelector('#seat-grid')
 const viewPerspectiveToggleBtn = document.querySelector('#view-perspective-toggle')
@@ -179,15 +222,73 @@ const STORAGE_LAST_GROUP_V2 = 'seat123_students_last_group_v2'
 const STORAGE_KEY_V1 = 'seat123_students_v1'
 
 function getGroupFromUI() {
-  const groupFromSelect = savedGroupsSelect?.value
+  const groupFromKey = savedGroupKeyInput?.value
   const groupFromInput = groupNameInput?.value
-  const group = (groupFromSelect || groupFromInput || '').trim()
+  const group = (groupFromKey || groupFromInput || '').trim()
   return group
 }
 
+function setSavedGroupSelection(name) {
+  const v = (name || '').trim()
+  if (savedGroupKeyInput) savedGroupKeyInput.value = v
+  if (savedGroupsDisplay) {
+    savedGroupsDisplay.textContent = v || '저장된 그룹 선택'
+  }
+}
+
+function closeSavedGroupsPopover() {
+  if (!savedGroupsPopover || !savedGroupsTrigger) return
+  savedGroupsPopover.hidden = true
+  savedGroupsTrigger.setAttribute('aria-expanded', 'false')
+}
+
+function openSavedGroupsPopover() {
+  if (!savedGroupsPopover || !savedGroupsTrigger) return
+  savedGroupsPopover.hidden = false
+  savedGroupsTrigger.setAttribute('aria-expanded', 'true')
+}
+
+function toggleSavedGroupsPopover() {
+  if (!savedGroupsPopover) return
+  if (savedGroupsPopover.hidden) openSavedGroupsPopover()
+  else closeSavedGroupsPopover()
+}
+
+function closeDeleteGroupModal() {
+  pendingDeleteGroupName = ''
+  if (deleteGroupModal) deleteGroupModal.hidden = true
+}
+
+function openDeleteGroupModal(groupName) {
+  const g = (groupName || '').trim()
+  if (!g || !deleteGroupModal || !deleteGroupModalText) return
+  pendingDeleteGroupName = g
+  deleteGroupModalText.textContent = `「${g}」명단을 브라우저에서 삭제할까요?`
+  deleteGroupModal.hidden = false
+  closeSavedGroupsPopover()
+  deleteGroupCancelBtn?.focus()
+}
+
+function performDeleteSavedGroup(groupName) {
+  const g = (groupName || '').trim()
+  if (!g) return
+  const key = `${STORAGE_PREFIX_V2}${g}`
+  if (!localStorage.getItem(key)) {
+    updateStatus(`저장된 명단을 찾을 수 없습니다. (그룹: ${g})`)
+    closeDeleteGroupModal()
+    return
+  }
+  localStorage.removeItem(key)
+  if (localStorage.getItem(STORAGE_LAST_GROUP_V2) === g) {
+    localStorage.removeItem(STORAGE_LAST_GROUP_V2)
+  }
+  refreshSavedGroups()
+  closeDeleteGroupModal()
+  updateStatus(`명단을 삭제했습니다. (그룹: ${g})`)
+}
+
 function refreshSavedGroups() {
-  if (!savedGroupsSelect) return
-  const currentValue = savedGroupsSelect.value
+  const currentValue = (savedGroupKeyInput?.value || '').trim()
   const groups = []
   for (let i = 0; i < localStorage.length; i += 1) {
     const key = localStorage.key(i)
@@ -197,20 +298,47 @@ function refreshSavedGroups() {
   }
 
   groups.sort((a, b) => a.localeCompare(b, 'ko'))
-  savedGroupsSelect.innerHTML = '<option value="">저장된 그룹 선택</option>'
-  for (const g of groups) {
-    const opt = document.createElement('option')
-    opt.value = g
-    opt.textContent = g
-    savedGroupsSelect.appendChild(opt)
+
+  if (savedGroupsListEl) {
+    savedGroupsListEl.innerHTML = ''
+    for (const g of groups) {
+      const li = document.createElement('li')
+      li.className = 'saved-groups-row'
+      li.setAttribute('role', 'presentation')
+
+      const pick = document.createElement('button')
+      pick.type = 'button'
+      pick.className = 'saved-groups-pick'
+      pick.textContent = g
+      pick.dataset.group = g
+      pick.setAttribute('role', 'option')
+
+      const del = document.createElement('button')
+      del.type = 'button'
+      del.className = 'saved-groups-delete'
+      del.textContent = '삭제'
+      del.dataset.group = g
+      del.setAttribute('aria-label', `${g} 명단 삭제`)
+
+      li.appendChild(pick)
+      li.appendChild(del)
+      savedGroupsListEl.appendChild(li)
+    }
   }
 
-  // 마지막에 저장한 그룹이 있으면 자동 선택
+  if (savedGroupsEmptyEl) {
+    const empty = groups.length === 0
+    savedGroupsEmptyEl.hidden = !empty
+    if (savedGroupsListEl) savedGroupsListEl.hidden = empty
+  }
+
   const last = localStorage.getItem(STORAGE_LAST_GROUP_V2)
   if (last && groups.includes(last)) {
-    savedGroupsSelect.value = last
+    setSavedGroupSelection(last)
   } else if (groups.includes(currentValue)) {
-    savedGroupsSelect.value = currentValue
+    setSavedGroupSelection(currentValue)
+  } else {
+    setSavedGroupSelection('')
   }
 }
 
@@ -299,31 +427,6 @@ function saveStudentsToLocal() {
   } catch {
     updateStatus('명단 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.')
   }
-}
-
-function deleteSavedStudentsFromLocal() {
-  const groupName = getGroupFromUI()
-  if (!groupName) {
-    updateStatus('삭제할 그룹을 드롭다운에서 선택하거나 그룹 이름을 입력해 주세요.')
-    return
-  }
-
-  const key = `${STORAGE_PREFIX_V2}${groupName}`
-  if (!localStorage.getItem(key)) {
-    updateStatus(`저장된 명단을 찾을 수 없습니다. (그룹: ${groupName})`)
-    return
-  }
-
-  if (!window.confirm(`「${groupName}」명단을 브라우저에서 삭제할까요?`)) {
-    return
-  }
-
-  localStorage.removeItem(key)
-  if (localStorage.getItem(STORAGE_LAST_GROUP_V2) === groupName) {
-    localStorage.removeItem(STORAGE_LAST_GROUP_V2)
-  }
-  refreshSavedGroups()
-  updateStatus(`명단을 삭제했습니다. (그룹: ${groupName})`)
 }
 
 function loadStudentsFromLocal() {
@@ -645,7 +748,7 @@ function exportSeatChartToExcel() {
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '좌석배치')
 
-  const group = (groupNameInput?.value || savedGroupsSelect?.value || '').trim()
+  const group = getGroupFromUI()
   const d = new Date()
   const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
   const safeGroup = group.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)
@@ -698,7 +801,7 @@ function tryRestoreLastSavedGroup() {
   applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   if (groupNameInput) groupNameInput.value = groupName
   refreshSavedGroups()
-  if (savedGroupsSelect) savedGroupsSelect.value = groupName
+  setSavedGroupSelection(groupName)
   refreshPresetStudentSelect()
   renderSeats()
   renderPreassignedList()
@@ -1000,7 +1103,52 @@ exportSeatExcelBtn?.addEventListener('click', exportSeatChartToExcel)
 studentInput.addEventListener('input', refreshPresetStudentSelect)
 saveStudentsBtn.addEventListener('click', saveStudentsToLocal)
 loadStudentsBtn.addEventListener('click', loadStudentsFromLocal)
-deleteSavedStudentsBtn?.addEventListener('click', deleteSavedStudentsFromLocal)
+
+savedGroupsTrigger?.addEventListener('click', (e) => {
+  e.stopPropagation()
+  toggleSavedGroupsPopover()
+})
+
+savedGroupsListEl?.addEventListener('click', (e) => {
+  const delBtn = e.target.closest('.saved-groups-delete')
+  const pickBtn = e.target.closest('.saved-groups-pick')
+  if (delBtn?.dataset.group) {
+    e.stopPropagation()
+    openDeleteGroupModal(delBtn.dataset.group)
+    return
+  }
+  if (pickBtn?.dataset.group) {
+    setSavedGroupSelection(pickBtn.dataset.group)
+    closeSavedGroupsPopover()
+  }
+})
+
+document.addEventListener('click', (e) => {
+  if (savedGroupsWidget?.contains(e.target)) return
+  closeSavedGroupsPopover()
+})
+
+deleteGroupConfirmBtn?.addEventListener('click', () => {
+  if (pendingDeleteGroupName) performDeleteSavedGroup(pendingDeleteGroupName)
+})
+
+deleteGroupCancelBtn?.addEventListener('click', () => {
+  closeDeleteGroupModal()
+})
+
+deleteGroupModal?.addEventListener('click', (e) => {
+  if (e.target.closest('[data-modal-dismiss]')) closeDeleteGroupModal()
+})
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return
+  if (deleteGroupModal && !deleteGroupModal.hidden) {
+    closeDeleteGroupModal()
+    e.preventDefault()
+    return
+  }
+  closeSavedGroupsPopover()
+})
 rowsInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') buildSeatMap()
 })
