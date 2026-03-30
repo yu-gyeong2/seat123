@@ -64,10 +64,12 @@ app.innerHTML = `
         <section class="panel legend">
           <p><strong>사용 방법</strong></p>
           <ul>
+            <li>자리 만들기: 행·열 숫자 입력</li>
             <li>자리 없애기: 빈 좌석 클릭(해당 자리에는 학생 배치 x)</li>
-            <li>특정 학생 공개 고정: 사전배치 후 Shift+좌석클릭(초록색으로 변함)</li>
-            <li>사전 좌석 배치: 학생 선택 후 좌석 클릭</li>
-            <li>사전 배치 반영은 Ctrl 키를 누른 채 자동 배치 클릭</li>
+            <li>사전 좌석 배치: 학생 선택 후 좌석 클릭 (⭐사전 배치후 명단 저장)</li>
+            <li>사전 배치 반영은 <strong class="ctrl-key-hint">Ctrl</strong> 키를 누른 채 자리 배치 클릭</li>
+            <li>특정 학생 공개 고정: 사전배치 후 <strong class="shift-key-hint">Shift</strong>+좌석클릭(초록색으로 변함)</li>
+            <li>학생 분리: 분리할 학생 쌍에 입력(랜덤하게 떨어진 채로 배치됨)</li>
           </ul>
           <p id="status">좌석판을 먼저 만들어 주세요.</p>
         </section>

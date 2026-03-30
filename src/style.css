@@ -552,6 +552,16 @@ button.primary {
   margin-bottom: 4px;
 }
 
+.legend strong.ctrl-key-hint {
+  font-weight: 700;
+  color: #e53935;
+}
+
+.legend strong.shift-key-hint {
+  font-weight: 700;
+  color: #1565c0;
+}
+
 .legend p {
   margin: 0;
 }
