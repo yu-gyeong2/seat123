@@ -59,6 +59,7 @@ app.innerHTML = `
               <option value="">저장된 그룹 선택</option>
             </select>
             <button id="load-students" type="button">명단 불러오기</button>
+            <button id="delete-saved-students" type="button" class="delete-list-btn">명단 삭제</button>
           </div>
         </div>
       </div>
@@ -138,6 +139,7 @@ const presetStudentSelect = document.querySelector('#preset-student-select')
 const clearPreassignmentsBtn = document.querySelector('#clear-preassignments')
 const saveStudentsBtn = document.querySelector('#save-students')
 const loadStudentsBtn = document.querySelector('#load-students')
+const deleteSavedStudentsBtn = document.querySelector('#delete-saved-students')
 const savedGroupsSelect = document.querySelector('#saved-groups')
 const seatBoardEl = document.querySelector('#seat-board')
 const seatGrid = document.querySelector('#seat-grid')
@@ -297,6 +299,31 @@ function saveStudentsToLocal() {
   } catch {
     updateStatus('명단 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.')
   }
+}
+
+function deleteSavedStudentsFromLocal() {
+  const groupName = getGroupFromUI()
+  if (!groupName) {
+    updateStatus('삭제할 그룹을 드롭다운에서 선택하거나 그룹 이름을 입력해 주세요.')
+    return
+  }
+
+  const key = `${STORAGE_PREFIX_V2}${groupName}`
+  if (!localStorage.getItem(key)) {
+    updateStatus(`저장된 명단을 찾을 수 없습니다. (그룹: ${groupName})`)
+    return
+  }
+
+  if (!window.confirm(`「${groupName}」명단을 브라우저에서 삭제할까요?`)) {
+    return
+  }
+
+  localStorage.removeItem(key)
+  if (localStorage.getItem(STORAGE_LAST_GROUP_V2) === groupName) {
+    localStorage.removeItem(STORAGE_LAST_GROUP_V2)
+  }
+  refreshSavedGroups()
+  updateStatus(`명단을 삭제했습니다. (그룹: ${groupName})`)
 }
 
 function loadStudentsFromLocal() {
@@ -973,6 +1000,7 @@ exportSeatExcelBtn?.addEventListener('click', exportSeatChartToExcel)
 studentInput.addEventListener('input', refreshPresetStudentSelect)
 saveStudentsBtn.addEventListener('click', saveStudentsToLocal)
 loadStudentsBtn.addEventListener('click', loadStudentsFromLocal)
+deleteSavedStudentsBtn?.addEventListener('click', deleteSavedStudentsFromLocal)
 rowsInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') buildSeatMap()
 })
