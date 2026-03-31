@@ -35,11 +35,11 @@ app.innerHTML = `
       <div class="seat-setup-row">
         <div class="field-group">
           <label id="label-rows" for="rows">행(줄) 수</label>
-          <input id="rows" type="number" min="1" max="10" value="5" />
+          <input id="rows" type="number" min="1" max="10" value="6" />
         </div>
         <div class="field-group">
           <label id="label-cols" for="cols">열(칸) 수</label>
-          <input id="cols" type="number" min="1" max="10" value="6" />
+          <input id="cols" type="number" min="1" max="10" value="5" />
         </div>
         <div class="field-group seat-setup-btn-wrap">
           <button id="build-seat-map" type="button" class="seat-setup-btn">
@@ -1301,4 +1301,3 @@ clearPreassignmentsBtn.addEventListener('click', () => {
 refreshSavedGroups()
 syncSeatDimensionLabels()
 buildSeatMap()
-tryRestoreLastSavedGroup()
