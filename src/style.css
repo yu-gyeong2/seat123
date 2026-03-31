@@ -921,6 +921,7 @@ button.primary {
 
 .seat .name {
   font-weight: 700;
+  font-size: 1.02rem;
   color: var(--text-strong);
 }
 
