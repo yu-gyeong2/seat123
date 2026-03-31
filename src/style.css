@@ -924,6 +924,13 @@ button.primary {
   color: var(--text-strong);
 }
 
+.seat .leader-crown {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 1.02rem;
+  line-height: 1;
+}
+
 .seat .blocked-icon {
   font-size: 1.55rem;
   font-weight: 800;
@@ -943,6 +950,14 @@ button.primary {
 .seat.fixed {
   background: linear-gradient(160deg, #d1fae5 0%, #ccfbf1 100%);
   border-color: rgba(110, 200, 185, 0.55);
+}
+
+.seat.group-leader {
+  border-width: 3px;
+  border-color: #f4b400;
+  box-shadow:
+    0 0 0 2px rgba(244, 180, 0, 0.25),
+    0 8px 18px rgba(139, 120, 200, 0.14);
 }
 
 .seat.blocked {

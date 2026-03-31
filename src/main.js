@@ -9,6 +9,7 @@ const state = {
   // Ctrl+자동배치로 사전배치를 "반영"한 이후엔 사전배치 좌석의 학생 이름을 보여줍니다.
   presetApplied: false,
   blockedSeats: new Set(),
+  groupLeaders: new Set(),
   /** 'teacher' = 교탁이 위(교실 앞), 'student' = 학생이 교실 뒤에서 보는 배치 */
   viewPerspective: 'teacher',
 }
@@ -92,6 +93,7 @@ app.innerHTML = `
             <li>사전 배치 반영은 <strong class="ctrl-key-hint">Ctrl</strong> 키를 누른 채 자리 배치 클릭</li>
             <li>특정 학생 공개 고정: 사전배치 후 <strong class="shift-key-hint">Shift</strong>+좌석클릭(초록색으로 변함)</li>
             <li>학생 분리: 분리할 학생 쌍에 입력(랜덤하게 떨어진 채로 배치됨)</li>
+            <li>모둠장 지정: 모둠 자리 배치 후 모둠장으로 정해진 학생 클릭</li>
             <li>⭐사전 배치 및 분리 학생 저장을 원할 경우 「명단 저장」 한번 더 클릭</li>
           </ul>
           <p id="status">좌석판을 먼저 만들어 주세요.</p>
@@ -362,7 +364,16 @@ function clearSeatAssignmentsForNewRoster() {
   }
   state.fixedAssignments.clear()
   state.preAssignments.clear()
+  state.groupLeaders.clear()
   state.presetApplied = false
+}
+
+function getLeaderSeatIdInGroupRow(rowNumber) {
+  for (const leaderSeatId of state.groupLeaders) {
+    const leaderSeat = state.seats.find((s) => s.id === leaderSeatId)
+    if (leaderSeat && leaderSeat.row === rowNumber) return leaderSeatId
+  }
+  return ''
 }
 
 /** 저장된 객체에서 사전 배치 복원. 학생은 명단에 있고 좌석 id가 현재 판에 있어야 반영. */
@@ -442,6 +453,11 @@ function saveStudentsToLocal() {
 }
 
 function loadStudentsFromLocal() {
+  // 다른 그룹으로 전환할 때 이전 그룹의 분리 학생 텍스트가 잠깐이라도 남지 않게 먼저 비웁니다.
+  if (separateInput) {
+    separateInput.value = ''
+  }
+
   const groupName = getGroupFromUI()
   if (!groupName) {
     // v1(기존 단일 키)이 있으면 마지막 수단으로 불러오기
@@ -630,11 +646,15 @@ function createSeatButton(seat) {
   } else {
     el.classList.add('empty')
   }
+  if (state.groupLeaders.has(seat.id) && seat.student && !state.blockedSeats.has(seat.id)) {
+    el.classList.add('group-leader')
+  }
 
   if (state.blockedSeats.has(seat.id)) {
     el.innerHTML = `<span class="pos">${seat.index}</span><span class="blocked-icon" aria-hidden="true">X</span>`
   } else {
-    el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${displayName}</span>`
+    const crown = state.groupLeaders.has(seat.id) && seat.student ? '<span class="leader-crown" aria-hidden="true">👑</span>' : ''
+    el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${displayName}</span>${crown}`
   }
   return el
 }
@@ -754,23 +774,68 @@ function exportSeatChartToExcel() {
     return
   }
 
+  const layout = getSeatLayout()
   const byId = new Map(state.seats.map((s) => [s.id, s]))
   const aoa = []
-  const headerRow = Array(cols).fill('')
-  headerRow[0] = '교탁'
-  aoa.push(headerRow)
+  const merges = []
 
-  for (let r = 1; r <= rows; r += 1) {
-    const row = []
-    for (let c = 1; c <= cols; c += 1) {
-      const seat = byId.get(`${r}-${c}`)
-      row.push(seat ? seatCellExportText(seat) : '')
+  if (layout === 'group') {
+    // 모둠 모드: 첫 열에 "n모둠" 표기 + 상단에 총 모둠 수 안내
+    const totalCols = cols + 1
+    const titleRow = Array(totalCols).fill('')
+    titleRow[0] = '모둠 배치도'
+    aoa.push(titleRow)
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } })
+
+    const infoRow = Array(totalCols).fill('')
+    infoRow[0] = `총 ${rows}모둠 / 모둠당 ${cols}명`
+    aoa.push(infoRow)
+    merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } })
+
+    for (let r = 1; r <= rows; r += 1) {
+      const row = [`${r}모둠`]
+      for (let c = 1; c <= cols; c += 1) {
+        const seat = byId.get(`${r}-${c}`)
+        row.push(seat ? seatCellExportText(seat) : '')
+      }
+      aoa.push(row)
     }
-    aoa.push(row)
+  } else if (layout === 'pair') {
+    // 짝꿍 모드: 2자리 단위로 붙여두고, 짝 사이에는 빈 칸 1개를 넣어 시각적 간격 반영
+    const pairGapCount = Math.floor((cols - 1) / 2)
+    const totalCols = cols + pairGapCount
+    const headerRow = Array(totalCols).fill('')
+    headerRow[0] = '교탁'
+    aoa.push(headerRow)
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } })
+
+    for (let r = 1; r <= rows; r += 1) {
+      const row = []
+      for (let c = 1; c <= cols; c += 1) {
+        const seat = byId.get(`${r}-${c}`)
+        row.push(seat ? seatCellExportText(seat) : '')
+        if (c % 2 === 0 && c < cols) row.push('')
+      }
+      aoa.push(row)
+    }
+  } else {
+    const headerRow = Array(cols).fill('')
+    headerRow[0] = '교탁'
+    aoa.push(headerRow)
+
+    for (let r = 1; r <= rows; r += 1) {
+      const row = []
+      for (let c = 1; c <= cols; c += 1) {
+        const seat = byId.get(`${r}-${c}`)
+        row.push(seat ? seatCellExportText(seat) : '')
+      }
+      aoa.push(row)
+    }
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } })
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } }]
+  ws['!merges'] = merges
 
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '좌석배치')
@@ -797,6 +862,7 @@ function buildSeatMap() {
   state.students = parseStudents(studentInput.value)
   state.fixedAssignments.clear()
   state.preAssignments.clear()
+  state.groupLeaders.clear()
   state.presetApplied = false
   state.blockedSeats.clear()
 
@@ -912,6 +978,7 @@ function autoAssign(applyPreset = false) {
     return
   }
   state.students = parseStudents(studentInput.value)
+  state.groupLeaders.clear()
   const separatedPairs = parseSeparatedPairs(separateInput.value)
 
   const preSeatIds = Array.from(state.preAssignments.keys())
@@ -989,6 +1056,7 @@ function resetSeatDisplay() {
   state.preAssignments.clear()
   state.presetApplied = false
   state.blockedSeats.clear()
+  state.groupLeaders.clear()
   for (const seat of state.seats) {
     seat.student = ''
   }
@@ -1017,6 +1085,7 @@ seatGrid.addEventListener('click', (event) => {
       if (existingStudent === selectedPresetStudent && existingSeatId !== seatId) {
         state.preAssignments.delete(existingSeatId)
         state.fixedAssignments.delete(existingSeatId)
+        state.groupLeaders.delete(existingSeatId)
         const oldSeat = state.seats.find((item) => item.id === existingSeatId)
         if (oldSeat) oldSeat.student = ''
       }
@@ -1026,6 +1095,7 @@ seatGrid.addEventListener('click', (event) => {
       state.preAssignments.delete(seatId)
       seat.student = ''
       state.fixedAssignments.delete(seatId)
+      state.groupLeaders.delete(seatId)
       state.presetApplied = false
       renderSeats()
       renderPreassignedList()
@@ -1041,6 +1111,23 @@ seatGrid.addEventListener('click', (event) => {
     renderPreassignedList()
     window.alert(`${selectedPresetStudent} 학생의 사전 배치가 완료되었습니다.`)
     updateStatus(`${selectedPresetStudent} 학생을 (${seat.row}, ${seat.col})에 사전 배치했습니다.`)
+    return
+  }
+
+  if (!event.shiftKey && getSeatLayout() === 'group' && seat.student && !state.blockedSeats.has(seatId)) {
+    const currentLeader = getLeaderSeatIdInGroupRow(seat.row)
+    if (currentLeader === seatId) {
+      state.groupLeaders.delete(seatId)
+      renderSeats()
+      renderPreassignedList()
+      updateStatus(`${seat.row}모둠장의 지정을 해제했습니다.`)
+      return
+    }
+    if (currentLeader) state.groupLeaders.delete(currentLeader)
+    state.groupLeaders.add(seatId)
+    renderSeats()
+    renderPreassignedList()
+    updateStatus(`${seat.row}모둠장으로 ${seat.student} 학생을 지정했습니다.`)
     return
   }
 
@@ -1071,6 +1158,7 @@ seatGrid.addEventListener('click', (event) => {
     }
     state.fixedAssignments.delete(seatId)
     state.preAssignments.delete(seatId)
+    state.groupLeaders.delete(seatId)
     seat.student = ''
   }
 
