@@ -10,7 +10,7 @@ const state = {
   presetApplied: false,
   blockedSeats: new Set(),
   groupLeaders: new Set(),
-  /** 'teacher' = 교탁이 위(교실 앞), 'student' = 학생이 교실 뒤에서 보는 배치 */
+  /** 'teacher' = 학생이 교실 뒤에서 보는 배치, 'student' = 교탁이 위(교실 앞) */
   viewPerspective: 'teacher',
 }
 
@@ -348,8 +348,9 @@ function refreshSavedGroups() {
 function applyViewPerspective() {
   if (!seatBoardEl || !viewPerspectiveToggleBtn) return
   const isStudent = state.viewPerspective === 'student'
-  seatBoardEl.classList.toggle('perspective-teacher', !isStudent)
-  seatBoardEl.classList.toggle('perspective-student', isStudent)
+  // 사용자 요청: 교사뷰/학생뷰 표시를 서로 교체
+  seatBoardEl.classList.toggle('perspective-teacher', isStudent)
+  seatBoardEl.classList.toggle('perspective-student', !isStudent)
   viewPerspectiveToggleBtn.textContent = isStudent ? '교사뷰' : '학생뷰'
   viewPerspectiveToggleBtn.setAttribute(
     'aria-label',
