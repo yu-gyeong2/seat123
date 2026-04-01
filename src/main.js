@@ -633,6 +633,7 @@ function createSeatButton(seat) {
   el.dataset.seatId = seat.id
 
   const displayName = (seat.student || '').trim()
+  const hasStudent = Boolean(displayName)
 
   if (state.blockedSeats.has(seat.id)) {
     el.classList.add('blocked')
@@ -654,8 +655,9 @@ function createSeatButton(seat) {
   if (state.blockedSeats.has(seat.id)) {
     el.innerHTML = `<span class="pos">${seat.index}</span><span class="blocked-icon" aria-hidden="true">X</span>`
   } else {
+    const posMarkup = hasStudent ? '' : `<span class="pos">${seat.index}</span>`
     const crown = state.groupLeaders.has(seat.id) && seat.student ? '<span class="leader-crown" aria-hidden="true">👑</span>' : ''
-    el.innerHTML = `<span class="pos">${seat.index}</span><span class="name">${displayName}</span>${crown}`
+    el.innerHTML = `${posMarkup}<span class="name">${displayName}</span>${crown}`
   }
   return el
 }
@@ -779,6 +781,8 @@ function exportSeatChartToExcel() {
   const byId = new Map(state.seats.map((s) => [s.id, s]))
   const aoa = []
   const merges = []
+  // 현재 코드에서는 teacher 상태가 학생뷰(반전), student 상태가 교사뷰(정방향)입니다.
+  const isStudentView = state.viewPerspective === 'teacher'
 
   if (layout === 'group') {
     // 모둠 모드: 첫 열에 "n모둠" 표기 + 상단에 총 모둠 수 안내
@@ -793,9 +797,16 @@ function exportSeatChartToExcel() {
     aoa.push(infoRow)
     merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } })
 
-    for (let r = 1; r <= rows; r += 1) {
+    const rowOrder = isStudentView
+      ? Array.from({ length: rows }, (_, i) => rows - i)
+      : Array.from({ length: rows }, (_, i) => i + 1)
+    const colOrder = isStudentView
+      ? Array.from({ length: cols }, (_, i) => cols - i)
+      : Array.from({ length: cols }, (_, i) => i + 1)
+
+    for (const r of rowOrder) {
       const row = [`${r}모둠`]
-      for (let c = 1; c <= cols; c += 1) {
+      for (const c of colOrder) {
         const seat = byId.get(`${r}-${c}`)
         row.push(seat ? seatCellExportText(seat) : '')
       }
@@ -805,34 +816,51 @@ function exportSeatChartToExcel() {
     // 짝꿍 모드: 2자리 단위로 붙여두고, 짝 사이에는 빈 칸 1개를 넣어 시각적 간격 반영
     const pairGapCount = Math.floor((cols - 1) / 2)
     const totalCols = cols + pairGapCount
-    const headerRow = Array(totalCols).fill('')
-    headerRow[0] = '교탁'
-    aoa.push(headerRow)
-    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } })
+    const teacherRow = Array(totalCols).fill('')
+    teacherRow[0] = '교탁'
+    const rowOrder = isStudentView
+      ? Array.from({ length: rows }, (_, i) => rows - i)
+      : Array.from({ length: rows }, (_, i) => i + 1)
+    const colOrder = isStudentView
+      ? Array.from({ length: cols }, (_, i) => cols - i)
+      : Array.from({ length: cols }, (_, i) => i + 1)
 
-    for (let r = 1; r <= rows; r += 1) {
+    if (!isStudentView) aoa.push(teacherRow)
+    for (const r of rowOrder) {
       const row = []
-      for (let c = 1; c <= cols; c += 1) {
+      for (let i = 0; i < colOrder.length; i += 1) {
+        const c = colOrder[i]
         const seat = byId.get(`${r}-${c}`)
         row.push(seat ? seatCellExportText(seat) : '')
-        if (c % 2 === 0 && c < cols) row.push('')
+        if (i % 2 === 1 && i < colOrder.length - 1) row.push('')
       }
       aoa.push(row)
     }
+    if (isStudentView) aoa.push(teacherRow)
+    const teacherRowIndex = isStudentView ? aoa.length - 1 : 0
+    merges.push({ s: { r: teacherRowIndex, c: 0 }, e: { r: teacherRowIndex, c: totalCols - 1 } })
   } else {
-    const headerRow = Array(cols).fill('')
-    headerRow[0] = '교탁'
-    aoa.push(headerRow)
+    const teacherRow = Array(cols).fill('')
+    teacherRow[0] = '교탁'
+    const rowOrder = isStudentView
+      ? Array.from({ length: rows }, (_, i) => rows - i)
+      : Array.from({ length: rows }, (_, i) => i + 1)
+    const colOrder = isStudentView
+      ? Array.from({ length: cols }, (_, i) => cols - i)
+      : Array.from({ length: cols }, (_, i) => i + 1)
 
-    for (let r = 1; r <= rows; r += 1) {
+    if (!isStudentView) aoa.push(teacherRow)
+    for (const r of rowOrder) {
       const row = []
-      for (let c = 1; c <= cols; c += 1) {
+      for (const c of colOrder) {
         const seat = byId.get(`${r}-${c}`)
         row.push(seat ? seatCellExportText(seat) : '')
       }
       aoa.push(row)
     }
-    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: cols - 1 } })
+    if (isStudentView) aoa.push(teacherRow)
+    const teacherRowIndex = isStudentView ? aoa.length - 1 : 0
+    merges.push({ s: { r: teacherRowIndex, c: 0 }, e: { r: teacherRowIndex, c: cols - 1 } })
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa)
