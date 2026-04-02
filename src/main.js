@@ -145,7 +145,7 @@ app.innerHTML = `
     </section>
 
     <section class="panel">
-      <div id="seat-board" class="seat-board perspective-teacher">
+      <div id="seat-board" class="seat-board perspective-student">
         <div class="teacher">교탁</div>
         <div id="seat-grid" class="seat-grid"></div>
       </div>
