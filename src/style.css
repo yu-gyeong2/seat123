@@ -100,6 +100,22 @@ body {
   padding-left: 1.45em;
 }
 
+.header-contact {
+  margin-top: 8px;
+  padding-left: 1.45em;
+}
+
+.header p a {
+  color: #6b8fd4;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.header p a:hover {
+  color: #5a7bc4;
+}
+
 .header-credit {
   margin: 10px 0 0;
   text-align: right;
@@ -531,6 +547,16 @@ textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.trait-buckets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trait-buckets-wrap[hidden] {
+  display: none !important;
 }
 
 .preset-row select {

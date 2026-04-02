@@ -18,8 +18,12 @@ const app = document.querySelector('#app')
 app.innerHTML = `
   <main class="container">
     <header class="header">
-      <h1>❤️ 학급 자리배치 프로그램</h1>
+      <h1>❤️ 학교 자리 배치 프로그램</h1>
       <p>학생 명단을 입력하고 좌석을 자동으로 배치하세요.</p>
+      <p class="header-contact">
+        계속 업데이트 중. 건의 사항 있으면 연락주세요 :)
+        <a href="mailto:yg.tech602@gmail.com">yg.tech602@gmail.com</a>
+      </p>
       <p class="header-credit">Made by 유경T</p>
     </header>
 
@@ -30,6 +34,7 @@ app.innerHTML = `
           <option value="individual">개별</option>
           <option value="pair">짝꿍 (옆자리 2명씩 붙음)</option>
           <option value="group">모둠 (모둠 수 × 모둠당 인원)</option>
+          <option value="group_diverse">모둠 (학생 특성 분류)</option>
         </select>
       </div>
       <div class="seat-setup-row">
@@ -50,6 +55,27 @@ app.innerHTML = `
       <div class="field-group wide">
         <label for="student-input">학생 이름 (줄바꿈 또는 쉼표로 구분)</label>
         <textarea id="student-input" rows="6" placeholder="강대현, 김건호, 김도연"></textarea>
+      </div>
+      <div id="trait-buckets-wrap" class="field-group wide trait-buckets-wrap" hidden>
+        <p class="secret-title">▶️ 특성별 명단 입력 (줄바꿈/쉼표 구분)</p>
+        <div class="trait-buckets">
+          <div class="field-group">
+            <label for="trait-bucket-1">특성 1</label>
+            <textarea id="trait-bucket-1" rows="3" placeholder="김건호, 김도연"></textarea>
+          </div>
+          <div class="field-group">
+            <label for="trait-bucket-2">특성 2</label>
+            <textarea id="trait-bucket-2" rows="3" placeholder="강대현, 홍길동"></textarea>
+          </div>
+          <div class="field-group">
+            <label for="trait-bucket-3">특성 3</label>
+            <textarea id="trait-bucket-3" rows="3" placeholder="학생 이름"></textarea>
+          </div>
+          <div class="field-group">
+            <label for="trait-bucket-4">특성 4</label>
+            <textarea id="trait-bucket-4" rows="3" placeholder="학생 이름"></textarea>
+          </div>
+        </div>
       </div>
       <div class="field-group wide">
         <div class="row-actions">
@@ -204,8 +230,13 @@ const countdownNumberEl = document.querySelector('#countdown-number')
 const shuffleBtn = document.querySelector('#shuffle')
 const advancedControlsEl = document.querySelector('#advanced-controls')
 const secretToggleBtn = document.querySelector('#secret-toggle')
+const traitBucketsWrapEl = document.querySelector('#trait-buckets-wrap')
 
 const separateInput = document.querySelector('#separate-input')
+const traitBucket1Input = document.querySelector('#trait-bucket-1')
+const traitBucket2Input = document.querySelector('#trait-bucket-2')
+const traitBucket3Input = document.querySelector('#trait-bucket-3')
+const traitBucket4Input = document.querySelector('#trait-bucket-4')
 const preassignedListEl = document.querySelector('#preassigned-list')
 
 function parseStudents(rawText) {
@@ -437,6 +468,7 @@ function saveStudentsToLocal() {
     preAssignments: preAssignmentsObj,
     seatLayout: getSeatLayout(),
     separatedRaw: separateInput?.value || '',
+    traitBuckets: traitBucketsPayload(),
   }
   try {
     localStorage.setItem(`${STORAGE_PREFIX_V2}${groupName}`, JSON.stringify(payload))
@@ -458,6 +490,7 @@ function loadStudentsFromLocal() {
   if (separateInput) {
     separateInput.value = ''
   }
+  setTraitBucketsFromSaved(null)
 
   const groupName = getGroupFromUI()
   if (!groupName) {
@@ -479,6 +512,7 @@ function loadStudentsFromLocal() {
           const sep = typeof parsedV1.separatedRaw === 'string' ? parsedV1.separatedRaw : ''
           separateInput.value = sep
         }
+        setTraitBucketsFromSaved(parsedV1?.traitBuckets)
         clearSeatAssignmentsForNewRoster()
         applyPreAssignmentsFromSavedObject(null, students)
         refreshPresetStudentSelect()
@@ -526,6 +560,7 @@ function loadStudentsFromLocal() {
     const sep = typeof parsed.separatedRaw === 'string' ? parsed.separatedRaw : ''
     separateInput.value = sep
   }
+  setTraitBucketsFromSaved(parsed?.traitBuckets)
   clearSeatAssignmentsForNewRoster()
   applySeatLayoutFromSaved(parsed)
   const preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
@@ -560,6 +595,56 @@ function parseSeparatedPairs(rawText) {
     .filter((pair) => pair.length === 2 && pair[0] !== pair[1])
 }
 
+function parseTraitBucketStudents(rawText) {
+  return String(rawText || '')
+    .split(/[\n,]+/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+}
+
+function collectTraitBuckets(studentsList = []) {
+  const entries = [
+    ['1', parseTraitBucketStudents(traitBucket1Input?.value)],
+    ['2', parseTraitBucketStudents(traitBucket2Input?.value)],
+    ['3', parseTraitBucketStudents(traitBucket3Input?.value)],
+    ['4', parseTraitBucketStudents(traitBucket4Input?.value)],
+  ]
+  const studentSet = new Set(studentsList)
+  const traits = new Map()
+  const mergedStudents = []
+  let unknownStudentCount = 0
+  let hasInput = false
+  for (const [trait, names] of entries) {
+    if (names.length > 0) hasInput = true
+    for (const name of names) {
+      if (studentSet.size > 0 && !studentSet.has(name)) {
+        unknownStudentCount += 1
+        continue
+      }
+      if (!traits.has(name)) mergedStudents.push(name)
+      traits.set(name, trait)
+    }
+  }
+  return { traits, mergedStudents, unknownStudentCount, hasInput }
+}
+
+function setTraitBucketsFromSaved(raw) {
+  const parsed = raw && typeof raw === 'object' ? raw : {}
+  if (traitBucket1Input) traitBucket1Input.value = String(parsed['1'] || '')
+  if (traitBucket2Input) traitBucket2Input.value = String(parsed['2'] || '')
+  if (traitBucket3Input) traitBucket3Input.value = String(parsed['3'] || '')
+  if (traitBucket4Input) traitBucket4Input.value = String(parsed['4'] || '')
+}
+
+function traitBucketsPayload() {
+  return {
+    '1': traitBucket1Input?.value || '',
+    '2': traitBucket2Input?.value || '',
+    '3': traitBucket3Input?.value || '',
+    '4': traitBucket4Input?.value || '',
+  }
+}
+
 function shuffleArray(items) {
   const arr = [...items]
   for (let i = arr.length - 1; i > 0; i -= 1) {
@@ -569,7 +654,7 @@ function shuffleArray(items) {
   return arr
 }
 
-const SEAT_LAYOUTS = ['individual', 'pair', 'group']
+const SEAT_LAYOUTS = ['individual', 'pair', 'group', 'group_diverse']
 
 function getSeatLayout() {
   const v = seatLayoutSelect?.value
@@ -577,7 +662,8 @@ function getSeatLayout() {
 }
 
 function syncSeatDimensionLabels() {
-  const g = getSeatLayout() === 'group'
+  const layout = getSeatLayout()
+  const g = layout === 'group' || layout === 'group_diverse'
   if (labelRows) labelRows.textContent = g ? '모둠 수' : '행(줄) 수'
   if (labelCols) labelCols.textContent = g ? '모둠당 인원' : '열(칸) 수'
   if (rowsInput) {
@@ -600,6 +686,12 @@ function syncSeatDimensionLabels() {
     if (v > maxC) colsInput.value = String(maxC)
     if (v < 1 || Number.isNaN(v)) colsInput.value = '1'
   }
+}
+
+function syncTraitBucketsVisibility() {
+  if (!traitBucketsWrapEl) return
+  const show = getSeatLayout() === 'group_diverse'
+  traitBucketsWrapEl.hidden = !show
 }
 
 function applySeatLayoutFromSaved(parsed) {
@@ -784,7 +876,7 @@ function exportSeatChartToExcel() {
   // 현재 코드에서는 teacher 상태가 학생뷰(반전), student 상태가 교사뷰(정방향)입니다.
   const isStudentView = state.viewPerspective === 'teacher'
 
-  if (layout === 'group') {
+  if (layout === 'group' || layout === 'group_diverse') {
     // 모둠 모드: 첫 열에 "n모둠" 표기 + 상단에 총 모둠 수 안내
     const totalCols = cols + 1
     const titleRow = Array(totalCols).fill('')
@@ -923,6 +1015,7 @@ function tryRestoreLastSavedGroup() {
     const sep = typeof parsed.separatedRaw === 'string' ? parsed.separatedRaw : ''
     separateInput.value = sep
   }
+  setTraitBucketsFromSaved(parsed?.traitBuckets)
   applySeatLayoutFromSaved(parsed)
   applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   if (groupNameInput) groupNameInput.value = groupName
@@ -1009,6 +1102,9 @@ function autoAssign(applyPreset = false) {
   state.students = parseStudents(studentInput.value)
   state.groupLeaders.clear()
   const separatedPairs = parseSeparatedPairs(separateInput.value)
+  const layout = getSeatLayout()
+  const traitParsed = collectTraitBuckets(state.students)
+  const studentTraits = traitParsed.traits
 
   const preSeatIds = Array.from(state.preAssignments.keys())
   for (const seatId of preSeatIds) {
@@ -1047,11 +1143,77 @@ function autoAssign(applyPreset = false) {
   let success = false
   const maxAttempts = 600
 
+  const assignByGroupTraitDiversity = () => {
+    const pool = shuffleArray(remainingStudents)
+    const groupedSeats = new Map()
+    for (const seat of availableSeats) {
+      if (!groupedSeats.has(seat.row)) groupedSeats.set(seat.row, [])
+      groupedSeats.get(seat.row).push(seat)
+    }
+    for (const rowSeats of groupedSeats.values()) {
+      rowSeats.sort((a, b) => a.col - b.col)
+    }
+    const rows = Array.from(groupedSeats.keys()).sort((a, b) => a - b)
+    const MAX_SAME_TRAIT_PER_GROUP = 2
+    for (const row of rows) {
+      const rowSeats = groupedSeats.get(row) || []
+      /** 모둠(행) 안에서 특성별 인원 수 — 같은 특성은 최대 2명까지 */
+      const traitCounts = new Map()
+      for (const seat of state.seats) {
+        if (seat.row !== row || !seat.student) continue
+        const trait = studentTraits.get(seat.student)
+        if (trait) traitCounts.set(trait, (traitCounts.get(trait) || 0) + 1)
+      }
+      for (const seat of rowSeats) {
+        if (pool.length === 0) {
+          seat.student = ''
+          continue
+        }
+        const countOf = (trait) => (trait ? traitCounts.get(trait) || 0 : 0)
+        let bestScore = Infinity
+        const candidateIndices = []
+        for (let i = 0; i < pool.length; i += 1) {
+          const name = pool[i]
+          const trait = studentTraits.get(name)
+          let score
+          if (!trait) {
+            score = 0.5
+          } else {
+            const c = countOf(trait)
+            if (c >= MAX_SAME_TRAIT_PER_GROUP) continue
+            score = c === 0 ? 0 : 1
+          }
+          if (score < bestScore) {
+            bestScore = score
+            candidateIndices.length = 0
+            candidateIndices.push(i)
+          } else if (score === bestScore) {
+            candidateIndices.push(i)
+          }
+        }
+        let pickIndex =
+          candidateIndices.length > 0
+            ? candidateIndices[Math.floor(Math.random() * candidateIndices.length)]
+            : 0
+        const [picked] = pool.splice(pickIndex, 1)
+        seat.student = picked || ''
+        const pickedTrait = studentTraits.get(picked)
+        if (pickedTrait) {
+          traitCounts.set(pickedTrait, (traitCounts.get(pickedTrait) || 0) + 1)
+        }
+      }
+    }
+  }
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const randomized = shuffleArray(remainingStudents)
-    availableSeats.forEach((seat, idx) => {
-      seat.student = idx < assignableCount ? randomized[idx] : ''
-    })
+    if (layout === 'group_diverse') {
+      assignByGroupTraitDiversity()
+    } else {
+      const randomized = shuffleArray(remainingStudents)
+      availableSeats.forEach((seat, idx) => {
+        seat.student = idx < assignableCount ? randomized[idx] : ''
+      })
+    }
     if (satisfiesSeparationPairs(separatedPairs)) {
       success = true
       break
@@ -1067,6 +1229,12 @@ function autoAssign(applyPreset = false) {
 
   if (remainingStudents.length > availableSeats.length) {
     updateStatus('좌석이 부족하여 일부 학생은 배치되지 않았습니다.')
+  } else if (layout === 'group_diverse') {
+    let extra = ''
+    if (traitParsed.unknownStudentCount > 0) {
+      extra += ` 명단외 학생 ${traitParsed.unknownStudentCount}건 무시.`
+    }
+    updateStatus(`학생 특성 분류 모둠 배치가 완료되었습니다.${extra}`)
   } else if (applyPreset) {
     updateStatus('자동 배치가 완료되었습니다. (사전 배치 반영)')
   } else {
@@ -1143,7 +1311,12 @@ seatGrid.addEventListener('click', (event) => {
     return
   }
 
-  if (!event.shiftKey && getSeatLayout() === 'group' && seat.student && !state.blockedSeats.has(seatId)) {
+  if (
+    !event.shiftKey &&
+    (getSeatLayout() === 'group' || getSeatLayout() === 'group_diverse') &&
+    seat.student &&
+    !state.blockedSeats.has(seatId)
+  ) {
     const currentLeader = getLeaderSeatIdInGroupRow(seat.row)
     if (currentLeader === seatId) {
       state.groupLeaders.delete(seatId)
@@ -1308,6 +1481,7 @@ secretToggleBtn.addEventListener('click', () => {
 })
 seatLayoutSelect?.addEventListener('change', () => {
   syncSeatDimensionLabels()
+  syncTraitBucketsVisibility()
   if (state.seats.length) renderSeats()
 })
 
@@ -1329,4 +1503,5 @@ clearPreassignmentsBtn.addEventListener('click', () => {
 
 refreshSavedGroups()
 syncSeatDimensionLabels()
+syncTraitBucketsVisibility()
 buildSeatMap()
