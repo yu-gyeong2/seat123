@@ -11,7 +11,7 @@ const state = {
   blockedSeats: new Set(),
   groupLeaders: new Set(),
   /** 'teacher' = 학생이 교실 뒤에서 보는 배치, 'student' = 교탁이 위(교실 앞) */
-  viewPerspective: 'teacher',
+  viewPerspective: 'student',
 }
 
 const app = document.querySelector('#app')
@@ -146,7 +146,7 @@ app.innerHTML = `
     </section>
 
     <section class="panel">
-      <div id="seat-board" class="seat-board perspective-student">
+      <div id="seat-board" class="seat-board perspective-teacher">
         <div class="teacher">교탁</div>
         <div id="seat-grid" class="seat-grid"></div>
       </div>
@@ -160,7 +160,7 @@ app.innerHTML = `
         </div>
         <div class="seat-actions-row">
           <button id="auto-assign" class="primary seat-primary" type="button">자리 배치 start</button>
-          <button id="view-perspective-toggle" type="button" class="perspective-toggle-btn">학생뷰</button>
+          <button id="view-perspective-toggle" type="button" class="perspective-toggle-btn">교사뷰</button>
         </div>
       </div>
       <div class="seat-export">
