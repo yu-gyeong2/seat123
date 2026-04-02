@@ -21,7 +21,7 @@ app.innerHTML = `
       <h1>❤️ 학교 자리 배치 프로그램</h1>
       <p>학생 명단을 입력하고 좌석을 자동으로 배치하세요.</p>
       <p class="header-contact">
-        계속 업데이트 중. 건의 사항 있으면 연락주세요 :)
+        계속 업데이트 중. 건의 사항 있으면 연락 주세요 :)
         <a href="mailto:yg.tech602@gmail.com">yg.tech602@gmail.com</a>
       </p>
       <p class="header-credit">Made by 유경T</p>
