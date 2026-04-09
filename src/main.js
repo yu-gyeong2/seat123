@@ -722,12 +722,12 @@ function tryRestoreGroupSeatSnapshot(parsed, students) {
   state.preAssignments.clear()
   state.presetApplied = false
 
-  const studentSet = new Set(students)
   const assign = snap.assignments && typeof snap.assignments === 'object' ? snap.assignments : {}
   for (const seat of state.seats) {
     const raw = assign[seat.id]
     const name = raw !== undefined && raw !== null ? String(raw).trim() : ''
-    seat.student = name && studentSet.has(name) ? name : ''
+    // 스냅샷 우선 복원: 명단과 100% 일치하지 않아도 저장된 배치 이름을 그대로 보여준다.
+    seat.student = name
   }
 
   for (const id of snap.blockedSeatIds || []) {
@@ -743,7 +743,7 @@ function tryRestoreGroupSeatSnapshot(parsed, students) {
   for (const [seatId, st] of Object.entries(fixedObj)) {
     const n = String(st).trim()
     const seat = byId.get(seatId)
-    if (!seat || !n || !studentSet.has(n) || seat.student !== n) continue
+    if (!seat || !n || seat.student !== n) continue
     state.fixedAssignments.set(seatId, n)
   }
 
