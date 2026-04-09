@@ -462,25 +462,37 @@ function saveStudentsToLocal() {
   }
 
   const preAssignmentsObj = Object.fromEntries(state.preAssignments)
+  const layout = getSeatLayout()
   const payload = {
     students,
     savedAt: Date.now(),
     group: groupName,
     preAssignments: preAssignmentsObj,
-    seatLayout: getSeatLayout(),
+    seatLayout: layout,
     separatedRaw: separateInput?.value || '',
     traitBuckets: traitBucketsPayload(),
   }
+  const groupSnap = buildGroupSeatSnapshotForPayload()
+  if (groupSnap) payload.groupSeatSnapshot = groupSnap
   try {
     localStorage.setItem(`${STORAGE_PREFIX_V2}${groupName}`, JSON.stringify(payload))
     localStorage.setItem(STORAGE_LAST_GROUP_V2, groupName)
     refreshSavedGroups()
     const preN = state.preAssignments.size
-    updateStatus(
-      preN > 0
-        ? `명단·사전 배치(${preN}건)가 저장되었습니다. (그룹: ${groupName})`
-        : `명단이 저장되었습니다. (그룹: ${groupName})`
-    )
+    const hasGroupSnap = Boolean(groupSnap)
+    if (hasGroupSnap) {
+      updateStatus(
+        preN > 0
+          ? `명단·사전 배치(${preN}건)·좌석 배치·모둠장이 저장되었습니다. (그룹: ${groupName})`
+          : `명단·좌석 배치·모둠장이 저장되었습니다. (그룹: ${groupName})`
+      )
+    } else {
+      updateStatus(
+        preN > 0
+          ? `명단·사전 배치(${preN}건)가 저장되었습니다. (그룹: ${groupName})`
+          : `명단이 저장되었습니다. (그룹: ${groupName})`
+      )
+    }
   } catch {
     updateStatus('명단 저장에 실패했습니다. 브라우저 저장 공간을 확인해 주세요.')
   }
@@ -564,13 +576,18 @@ function loadStudentsFromLocal() {
   setTraitBucketsFromSaved(parsed?.traitBuckets)
   clearSeatAssignmentsForNewRoster()
   applySeatLayoutFromSaved(parsed)
-  const preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
+  let preResult = { applied: 0, dropped: 0 }
+  const restoredGroupSnap = tryRestoreGroupSeatSnapshot(parsed, students)
+  if (!restoredGroupSnap) {
+    preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
+  }
   refreshPresetStudentSelect()
   renderSeats()
   renderPreassignedList()
   let msg = `그룹의 명단을 불러왔습니다. (그룹: ${groupName})`
-  if (preResult.applied > 0) msg += ` 사전 배치 ${preResult.applied}건 복원.`
-  if (preResult.dropped > 0) msg += ` (생략 ${preResult.dropped}건)`
+  if (restoredGroupSnap) msg += ' 좌석 배치·모둠장 복원.'
+  if (!restoredGroupSnap && preResult.applied > 0) msg += ` 사전 배치 ${preResult.applied}건 복원.`
+  if (!restoredGroupSnap && preResult.dropped > 0) msg += ` (생략 ${preResult.dropped}건)`
   updateStatus(msg)
 }
 
@@ -660,6 +677,82 @@ const SEAT_LAYOUTS = ['individual', 'pair', 'group', 'group_diverse']
 function getSeatLayout() {
   const v = seatLayoutSelect?.value
   return SEAT_LAYOUTS.includes(v) ? v : 'individual'
+}
+
+function isGroupLikeLayout(layout) {
+  return layout === 'group' || layout === 'group_diverse'
+}
+
+/** 모둠·모둠(학생 특성 분류)일 때 좌석판·리더 등을 명단과 함께 저장 */
+function buildGroupSeatSnapshotForPayload() {
+  const layout = getSeatLayout()
+  if (!isGroupLikeLayout(layout) || !state.seats.length) return null
+  const rows = Number(rowsInput.value)
+  const cols = Number(colsInput.value)
+  if (!rows || !cols) return null
+  return {
+    rows,
+    cols,
+    assignments: Object.fromEntries(state.seats.map((s) => [s.id, s.student || ''])),
+    blockedSeatIds: [...state.blockedSeats],
+    groupLeaderSeatIds: [...state.groupLeaders],
+    fixedAssignments: Object.fromEntries(state.fixedAssignments),
+    viewPerspective: state.viewPerspective,
+  }
+}
+
+/** 저장된 groupSeatSnapshot으로 좌석판 복원. 성공 시 true */
+function tryRestoreGroupSeatSnapshot(parsed, students) {
+  const layout = getSeatLayout()
+  const snap = parsed?.groupSeatSnapshot
+  if (!snap || !isGroupLikeLayout(layout)) return false
+  const rows = Number(snap.rows)
+  const cols = Number(snap.cols)
+  if (!rows || !cols) return false
+
+  rowsInput.value = String(rows)
+  colsInput.value = String(cols)
+  syncSeatDimensionLabels()
+
+  state.seats = makeSeats(rows, cols)
+  const byId = new Map(state.seats.map((s) => [s.id, s]))
+  state.blockedSeats.clear()
+  state.groupLeaders.clear()
+  state.fixedAssignments.clear()
+  state.preAssignments.clear()
+  state.presetApplied = false
+
+  const studentSet = new Set(students)
+  const assign = snap.assignments && typeof snap.assignments === 'object' ? snap.assignments : {}
+  for (const seat of state.seats) {
+    const raw = assign[seat.id]
+    const name = raw !== undefined && raw !== null ? String(raw).trim() : ''
+    seat.student = name && studentSet.has(name) ? name : ''
+  }
+
+  for (const id of snap.blockedSeatIds || []) {
+    if (byId.has(id)) state.blockedSeats.add(id)
+  }
+  for (const id of snap.groupLeaderSeatIds || []) {
+    const s = byId.get(id)
+    if (s?.student) state.groupLeaders.add(id)
+  }
+
+  const fixedObj =
+    snap.fixedAssignments && typeof snap.fixedAssignments === 'object' ? snap.fixedAssignments : {}
+  for (const [seatId, st] of Object.entries(fixedObj)) {
+    const n = String(st).trim()
+    const seat = byId.get(seatId)
+    if (!seat || !n || !studentSet.has(n) || seat.student !== n) continue
+    state.fixedAssignments.set(seatId, n)
+  }
+
+  if (snap.viewPerspective === 'teacher' || snap.viewPerspective === 'student') {
+    state.viewPerspective = snap.viewPerspective
+    applyViewPerspective()
+  }
+
+  return true
 }
 
 function syncSeatDimensionLabels() {
@@ -1017,15 +1110,21 @@ function tryRestoreLastSavedGroup() {
     separateInput.value = sep
   }
   setTraitBucketsFromSaved(parsed?.traitBuckets)
+  clearSeatAssignmentsForNewRoster()
   applySeatLayoutFromSaved(parsed)
-  applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
+  const restoredSnap = tryRestoreGroupSeatSnapshot(parsed, students)
+  if (!restoredSnap) {
+    applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
+  }
   if (groupNameInput) groupNameInput.value = groupName
   refreshSavedGroups()
   setSavedGroupSelection(groupName)
   refreshPresetStudentSelect()
   renderSeats()
   renderPreassignedList()
-  updateStatus(`마지막 저장 그룹을 불러왔습니다. (그룹: ${groupName})`)
+  let restoreMsg = `마지막 저장 그룹을 불러왔습니다. (그룹: ${groupName})`
+  if (restoredSnap) restoreMsg += ' 좌석 배치·모둠장 복원.'
+  updateStatus(restoreMsg)
 }
 
 function refreshPresetStudentSelect() {
