@@ -409,13 +409,24 @@ function getLeaderSeatIdInGroupRow(rowNumber) {
   return ''
 }
 
-/** 현재 좌석판·명단 기준으로 사전 배치 맵을 반영. 좌석 id와 명단·중복 규칙은 불러오기와 동일. */
-function applyPreAssignmentsFromMap(prevMap, studentsList) {
+/**
+ * 현재 좌석판·명단 기준으로 사전 배치 맵을 반영.
+ * fillSeatStudent: false면 state.preAssignments만 채우고 seat.student는 유지(스냅샷 복원 후 사전 배치 목록만 맞출 때).
+ */
+function applyPreAssignmentsFromMap(prevMap, studentsList, options = {}) {
+  const { fillSeatStudent = true } = options
   state.preAssignments.clear()
   const studentSet = new Set(studentsList)
   const seatById = new Map(state.seats.map((s) => [s.id, s]))
 
   const usedStudents = new Set()
+  if (!fillSeatStudent) {
+    for (const seat of state.seats) {
+      const n = (seat.student || '').trim()
+      if (n) usedStudents.add(n)
+    }
+  }
+
   let applied = 0
   let dropped = 0
 
@@ -426,15 +437,25 @@ function applyPreAssignmentsFromMap(prevMap, studentsList) {
       dropped += 1
       continue
     }
-    if (usedStudents.has(name)) {
+    const seat = seatById.get(seatId)
+    const onSeat = (seat.student || '').trim()
+
+    if (fillSeatStudent) {
+      if (usedStudents.has(name)) {
+        dropped += 1
+        continue
+      }
+    } else if (usedStudents.has(name) && onSeat !== name) {
       dropped += 1
       continue
     }
-    usedStudents.add(name)
+
+    if (!usedStudents.has(name)) usedStudents.add(name)
     state.preAssignments.set(seatId, name)
-    state.fixedAssignments.delete(seatId)
-    const seat = seatById.get(seatId)
-    if (seat) seat.student = name
+    if (fillSeatStudent) {
+      state.fixedAssignments.delete(seatId)
+      if (seat) seat.student = name
+    }
     applied += 1
   }
   state.presetApplied = false
@@ -477,20 +498,32 @@ function saveStudentsToLocal() {
     separatedRaw: separateInput?.value || '',
     traitBuckets: traitBucketsPayload(),
   }
-  const groupSnap = buildGroupSeatSnapshotForPayload()
-  if (groupSnap) payload.groupSeatSnapshot = groupSnap
+  const seatSnap = buildSeatSnapshotForPayload()
+  if (seatSnap) {
+    payload.seatSnapshot = seatSnap
+    if (isGroupLikeLayout(layout)) payload.groupSeatSnapshot = seatSnap
+  }
   try {
     localStorage.setItem(`${STORAGE_PREFIX_V2}${groupName}`, JSON.stringify(payload))
     localStorage.setItem(STORAGE_LAST_GROUP_V2, groupName)
     refreshSavedGroups()
     const preN = state.preAssignments.size
-    const hasGroupSnap = Boolean(groupSnap)
-    if (hasGroupSnap) {
-      updateStatus(
-        preN > 0
-          ? `명단·사전 배치(${preN}건)·좌석 배치·모둠장이 저장되었습니다. (그룹: ${groupName})`
-          : `명단·좌석 배치·모둠장이 저장되었습니다. (그룹: ${groupName})`
-      )
+    const hasSeatSnap = Boolean(seatSnap)
+    if (hasSeatSnap) {
+      const isG = isGroupLikeLayout(layout)
+      if (isG) {
+        updateStatus(
+          preN > 0
+            ? `명단·좌석 배열·사전 배치(${preN}건)·모둠 배치·모둠장이 저장되었습니다. (그룹: ${groupName})`
+            : `명단·좌석 배열·모둠 배치·모둠장이 저장되었습니다. (그룹: ${groupName})`
+        )
+      } else {
+        updateStatus(
+          preN > 0
+            ? `명단·좌석 배열·사전 배치(${preN}건)·배치가 저장되었습니다. (그룹: ${groupName})`
+            : `명단·좌석 배열·배치가 저장되었습니다. (그룹: ${groupName})`
+        )
+      }
     } else {
       updateStatus(
         preN > 0
@@ -582,17 +615,17 @@ function loadStudentsFromLocal() {
   clearSeatAssignmentsForNewRoster()
   applySeatLayoutFromSaved(parsed)
   let preResult = { applied: 0, dropped: 0 }
-  const restoredGroupSnap = tryRestoreGroupSeatSnapshot(parsed, students)
-  if (!restoredGroupSnap) {
+  const restoredSeatSnap = tryRestoreSeatSnapshot(parsed, students)
+  if (!restoredSeatSnap) {
     preResult = applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   }
   refreshPresetStudentSelect()
   renderSeats()
   renderPreassignedList()
   let msg = `그룹의 명단을 불러왔습니다. (그룹: ${groupName})`
-  if (restoredGroupSnap) msg += ' 좌석 배치·모둠장 복원.'
-  if (!restoredGroupSnap && preResult.applied > 0) msg += ` 사전 배치 ${preResult.applied}건 복원.`
-  if (!restoredGroupSnap && preResult.dropped > 0) msg += ` (생략 ${preResult.dropped}건)`
+  if (restoredSeatSnap) msg += ' 저장된 좌석 배열·배치를 불러왔습니다.'
+  if (!restoredSeatSnap && preResult.applied > 0) msg += ` 사전 배치 ${preResult.applied}건 복원.`
+  if (!restoredSeatSnap && preResult.dropped > 0) msg += ` (생략 ${preResult.dropped}건)`
   updateStatus(msg)
 }
 
@@ -692,10 +725,9 @@ function isGroupLikeLayout(layout) {
   return layout === 'group' || layout === 'group_diverse'
 }
 
-/** 모둠·모둠(학생 특성 분류)일 때 좌석판·리더 등을 명단과 함께 저장 */
-function buildGroupSeatSnapshotForPayload() {
-  const layout = getSeatLayout()
-  if (!isGroupLikeLayout(layout) || !state.seats.length) return null
+/** 좌석판이 있을 때 행·열·배치·제외·고정·뷰·사전 배치 목록을 명단과 함께 저장 */
+function buildSeatSnapshotForPayload() {
+  if (!state.seats.length) return null
   const rows = Number(rowsInput.value)
   const cols = Number(colsInput.value)
   if (!rows || !cols) return null
@@ -707,14 +739,17 @@ function buildGroupSeatSnapshotForPayload() {
     groupLeaderSeatIds: [...state.groupLeaders],
     fixedAssignments: Object.fromEntries(state.fixedAssignments),
     viewPerspective: state.viewPerspective,
+    preAssignments: Object.fromEntries(state.preAssignments),
   }
 }
 
-/** 저장된 groupSeatSnapshot으로 좌석판 복원. 성공 시 true */
-function tryRestoreGroupSeatSnapshot(parsed, students) {
-  const layout = getSeatLayout()
-  const snap = parsed?.groupSeatSnapshot
-  if (!snap || !isGroupLikeLayout(layout)) return false
+/**
+ * 저장된 seatSnapshot(또는 구버전 groupSeatSnapshot)으로 좌석판 복원. 성공 시 true
+ * 개별·짝꿍·모둠 공통.
+ */
+function tryRestoreSeatSnapshot(parsed, students) {
+  const snap = parsed?.seatSnapshot ?? parsed?.groupSeatSnapshot
+  if (!snap) return false
   const rows = Number(snap.rows)
   const cols = Number(snap.cols)
   if (!rows || !cols) return false
@@ -759,6 +794,19 @@ function tryRestoreGroupSeatSnapshot(parsed, students) {
   if (snap.viewPerspective === 'teacher' || snap.viewPerspective === 'student') {
     state.viewPerspective = snap.viewPerspective
     applyViewPerspective()
+  }
+
+  const preSnap =
+    snap.preAssignments && typeof snap.preAssignments === 'object' && !Array.isArray(snap.preAssignments)
+      ? snap.preAssignments
+      : null
+  if (preSnap && Object.keys(preSnap).length > 0) {
+    const m = new Map()
+    for (const [seatId, st] of Object.entries(preSnap)) {
+      const name = String(st).trim()
+      if (name) m.set(seatId, name)
+    }
+    applyPreAssignmentsFromMap(m, students, { fillSeatStudent: false })
   }
 
   return true
@@ -1127,7 +1175,7 @@ function tryRestoreLastSavedGroup() {
   setTraitBucketsFromSaved(parsed?.traitBuckets)
   clearSeatAssignmentsForNewRoster()
   applySeatLayoutFromSaved(parsed)
-  const restoredSnap = tryRestoreGroupSeatSnapshot(parsed, students)
+  const restoredSnap = tryRestoreSeatSnapshot(parsed, students)
   if (!restoredSnap) {
     applyPreAssignmentsFromSavedObject(parsed.preAssignments, students)
   }
@@ -1138,7 +1186,7 @@ function tryRestoreLastSavedGroup() {
   renderSeats()
   renderPreassignedList()
   let restoreMsg = `마지막 저장 그룹을 불러왔습니다. (그룹: ${groupName})`
-  if (restoredSnap) restoreMsg += ' 좌석 배치·모둠장 복원.'
+  if (restoredSnap) restoreMsg += ' 저장된 좌석 배열·배치를 불러왔습니다.'
   updateStatus(restoreMsg)
 }
 
