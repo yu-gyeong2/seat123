@@ -679,6 +679,10 @@ function shuffleArray(items) {
 
 const SEAT_LAYOUTS = ['individual', 'pair', 'group', 'group_diverse']
 
+/** 짝꿍 모드에서 행·열 입력란에 넣을 기본값 (책상 배열 버튼 전까지 표시용) */
+const PAIR_DEFAULT_ROWS = 5
+const PAIR_DEFAULT_COLS = 6
+
 function getSeatLayout() {
   const v = seatLayoutSelect?.value
   return SEAT_LAYOUTS.includes(v) ? v : 'individual'
@@ -1591,6 +1595,10 @@ secretToggleBtn.addEventListener('click', () => {
   advancedControlsEl.classList.toggle('show')
 })
 seatLayoutSelect?.addEventListener('change', () => {
+  if (getSeatLayout() === 'pair') {
+    if (rowsInput) rowsInput.value = String(PAIR_DEFAULT_ROWS)
+    if (colsInput) colsInput.value = String(PAIR_DEFAULT_COLS)
+  }
   syncSeatDimensionLabels()
   syncTraitBucketsVisibility()
   if (state.seats.length) renderSeats()
