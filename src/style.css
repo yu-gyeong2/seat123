@@ -917,6 +917,8 @@ button.primary {
   display: flex;
   flex-direction: column;
   gap: 11px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .seat-row-pair {
@@ -936,6 +938,33 @@ button.primary {
 .seat-pair .seat {
   flex: 1 1 90px;
   min-width: 86px;
+}
+
+/* 짝꿍: 사전 배치로 이름이 들어갈 때 칸이 커지거나 짝이 줄바꿈되며 배열이 늘어나 보이는 현상 방지 */
+.seat-grid.layout-pair .seat-row-pair {
+  flex-wrap: nowrap;
+}
+
+.seat-grid.layout-pair .seat-pair {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.seat-grid.layout-pair .seat-pair .seat {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.seat-grid.layout-pair .seat.filled .name,
+.seat-grid.layout-pair .seat.fixed .name {
+  font-size: 1.12rem;
+}
+
+.seat-grid.layout-pair .seat .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .seat-grid.layout-group {

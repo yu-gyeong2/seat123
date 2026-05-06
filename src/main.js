@@ -409,26 +409,19 @@ function getLeaderSeatIdInGroupRow(rowNumber) {
   return ''
 }
 
-/** 저장된 객체에서 사전 배치 복원. 학생은 명단에 있고 좌석 id가 현재 판에 있어야 반영. */
-function applyPreAssignmentsFromSavedObject(entries, studentsList) {
+/** 현재 좌석판·명단 기준으로 사전 배치 맵을 반영. 좌석 id와 명단·중복 규칙은 불러오기와 동일. */
+function applyPreAssignmentsFromMap(prevMap, studentsList) {
   state.preAssignments.clear()
   const studentSet = new Set(studentsList)
   const seatById = new Map(state.seats.map((s) => [s.id, s]))
-
-  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) {
-    state.presetApplied = false
-    return { applied: 0, dropped: 0 }
-  }
-
-  const pairs = Object.entries(entries)
-    .map(([seatId, st]) => [seatId, String(st).trim()])
-    .filter(([, name]) => name)
 
   const usedStudents = new Set()
   let applied = 0
   let dropped = 0
 
-  for (const [seatId, name] of pairs) {
+  for (const [seatId, st] of prevMap.entries()) {
+    const name = String(st).trim()
+    if (!name) continue
     if (!seatById.has(seatId) || !studentSet.has(name)) {
       dropped += 1
       continue
@@ -446,6 +439,18 @@ function applyPreAssignmentsFromSavedObject(entries, studentsList) {
   }
   state.presetApplied = false
   return { applied, dropped }
+}
+
+/** 저장된 객체에서 사전 배치 복원. 학생은 명단에 있고 좌석 id가 현재 판에 있어야 반영. */
+function applyPreAssignmentsFromSavedObject(entries, studentsList) {
+  const m = new Map()
+  if (entries && typeof entries === 'object' && !Array.isArray(entries)) {
+    for (const [seatId, st] of Object.entries(entries)) {
+      const name = String(st).trim()
+      if (name) m.set(seatId, name)
+    }
+  }
+  return applyPreAssignmentsFromMap(m, studentsList)
 }
 
 function saveStudentsToLocal() {
@@ -1073,18 +1078,24 @@ function buildSeatMap() {
     return
   }
 
+  const prevPre = new Map(state.preAssignments)
+
   state.seats = makeSeats(rows, cols)
   state.students = parseStudents(studentInput.value)
   state.fixedAssignments.clear()
-  state.preAssignments.clear()
   state.groupLeaders.clear()
   state.presetApplied = false
   state.blockedSeats.clear()
 
+  const preResult = applyPreAssignmentsFromMap(prevPre, state.students)
+
   refreshPresetStudentSelect()
   renderSeats()
   renderPreassignedList()
-  updateStatus('좌석판이 생성되었습니다.')
+  let msg = '좌석판이 생성되었습니다.'
+  if (preResult.applied > 0) msg += ` 사전 배치 ${preResult.applied}건 유지.`
+  if (preResult.dropped > 0) msg += ` (좌석 범위 밖·명단 없음·중복 등 ${preResult.dropped}건 생략)`
+  updateStatus(msg)
 }
 
 function tryRestoreLastSavedGroup() {
